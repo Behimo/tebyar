@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Events\ConversationUpdated;
 use App\Events\MessageSent;
 use App\Http\Controllers\Controller;
 use App\Models\Block;
@@ -12,6 +13,7 @@ use App\Services\Alerts;
 use App\Support\Present;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Symfony\Component\HttpFoundation\StreamedResponse;
 
@@ -22,11 +24,26 @@ class MessageController extends Controller
         $viewer = $request->user();
         $hidden = Present::hiddenIds($viewer);
         $conversations = Conversation::query()
-            ->where(fn ($q) => $q->where('user_one_id', $viewer->id)->orWhere('user_two_id', $viewer->id))
-            ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_one_id', $hidden)->whereNotIn('user_two_id', $hidden))
-            ->with(['userOne', 'userTwo'])
+            ->whereHas('participants', fn ($q) => $q->where('user_id', $viewer->id))
+            ->with([
+                'userOne',
+                'userTwo',
+                'participants.user',
+                'messages' => fn ($q) => $q->latest()->limit(1),
+            ])
             ->orderByDesc('last_message_at')
-            ->get();
+            ->get()
+            ->filter(function (Conversation $conversation) use ($viewer, $hidden) {
+                if ($conversation->isGroup()) {
+                    return true;
+                }
+
+                $peerId = $conversation->user_one_id === $viewer->id
+                    ? $conversation->user_two_id
+                    : $conversation->user_one_id;
+
+                return $peerId && ! in_array($peerId, $hidden, true);
+            });
 
         return response()->json([
             'data' => $conversations->map(fn (Conversation $conversation) => Present::conversation($conversation, $viewer))->values(),
@@ -62,13 +79,103 @@ class MessageController extends Controller
 
         $one = min($viewer->id, $peer->id);
         $two = max($viewer->id, $peer->id);
-        $conversation = Conversation::query()->firstOrCreate([
-            'user_one_id' => $one,
-            'user_two_id' => $two,
-        ]);
-        $conversation->load(['userOne', 'userTwo']);
+        $conversation = Conversation::query()->firstOrCreate(
+            ['user_one_id' => $one, 'user_two_id' => $two, 'type' => 'direct'],
+            ['last_message_at' => now()],
+        );
+        $conversation->ensureDirectParticipants();
+        $conversation->load(['userOne', 'userTwo', 'participants.user']);
 
         return response()->json(['data' => Present::conversation($conversation, $viewer)]);
+    }
+
+    public function connections(Request $request): JsonResponse
+    {
+        $viewer = $request->user();
+        $ids = $viewer->following()->pluck('users.id')
+            ->merge($viewer->followers()->pluck('users.id'))
+            ->unique()
+            ->values();
+        $term = trim($request->string('q')->toString());
+        $people = User::query()
+            ->whereIn('id', $ids)
+            ->when($term !== '', function ($query) use ($term) {
+                $like = '%'.$term.'%';
+                $query->where(fn ($inner) => $inner->where('name', 'like', $like)->orWhere('slug', 'like', $like));
+            })
+            ->orderBy('name')
+            ->limit(40)
+            ->get();
+
+        return response()->json([
+            'data' => $people->map(fn (User $user) => Present::user($user, $viewer))->values(),
+        ]);
+    }
+
+    public function storeGroup(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:120'],
+            'user_ids' => ['required', 'array', 'min:1'],
+            'user_ids.*' => ['integer', 'distinct'],
+        ]);
+
+        $viewer = $request->user();
+        $memberIds = collect($data['user_ids'])->push($viewer->id)->unique()->values();
+
+        $conversation = DB::transaction(function () use ($viewer, $data, $memberIds) {
+            $conversation = Conversation::query()->create([
+                'type' => 'group',
+                'title' => $data['title'],
+                'created_by' => $viewer->id,
+                'last_message_at' => now(),
+            ]);
+
+            foreach ($memberIds as $userId) {
+                $conversation->participants()->create([
+                    'user_id' => $userId,
+                    'role' => $userId === $viewer->id ? 'admin' : 'member',
+                    'last_read_at' => $userId === $viewer->id ? now() : null,
+                ]);
+            }
+
+            return $conversation;
+        });
+
+        $conversation->load(['participants.user']);
+
+        return response()->json(['data' => Present::conversation($conversation, $viewer)], 201);
+    }
+
+    public function addMember(Request $request, Conversation $conversation): JsonResponse
+    {
+        $this->guard($conversation, $request->user());
+        $this->assertAdmin($conversation, $request->user());
+        abort_unless($conversation->isGroup(), 422);
+
+        $data = $request->validate(['user_id' => ['required', 'integer']]);
+        $user = User::query()->whereKey($data['user_id'])->where('account_status', 'verified')->firstOrFail();
+        if ($conversation->participants()->where('user_id', $user->id)->exists()) {
+            return response()->json(['message' => 'عضو قبلاً اضافه شده.'], 422);
+        }
+
+        $conversation->participants()->create([
+            'user_id' => $user->id,
+            'role' => 'member',
+        ]);
+
+        return response()->json(['message' => 'عضو اضافه شد.']);
+    }
+
+    public function removeMember(Request $request, Conversation $conversation, User $user): JsonResponse
+    {
+        $this->guard($conversation, $request->user());
+        $this->assertAdmin($conversation, $request->user());
+        abort_unless($conversation->isGroup(), 422);
+        abort_if($user->id === $request->user()->id, 422, 'سازنده گروه را نمی‌توان از اینجا حذف کرد.');
+        $conversation->participants()->where('user_id', $user->id)->delete();
+
+        return response()->json(['message' => 'عضو حذف شد.']);
     }
 
     public function messages(Request $request, Conversation $conversation): JsonResponse
@@ -76,11 +183,14 @@ class MessageController extends Controller
         $this->guard($conversation, $request->user());
         $this->markRead($conversation, $request->user());
         $conversation->refresh();
-        $messages = $conversation->messages()->oldest()->limit(200)->get();
+        $messages = $conversation->messages()->with('sender')->oldest()->limit(200)->get();
 
         return response()->json([
             'data' => $messages->map(fn (Message $message) => Present::message($message, $conversation, $request->user()))->values(),
-            'peer' => Present::user($conversation->peer($request->user()), $request->user()),
+            'conversation' => Present::conversation($conversation->loadMissing(['userOne', 'userTwo', 'participants.user']), $request->user()),
+            'peer' => $conversation->isGroup()
+                ? null
+                : Present::user($conversation->peer($request->user()), $request->user()),
         ]);
     }
 
@@ -113,11 +223,24 @@ class MessageController extends Controller
         $conversation->forceFill(['last_message_at' => now()])->save();
         $this->markRead($conversation, $request->user());
 
-        $peer = $conversation->peer($request->user());
-        Alerts::send($peer, 'message', 'پیام جدید', $request->user()->name.' برای شما پیام فرستاد.', '/messages/'.$conversation->id);
+        if ($conversation->isGroup()) {
+            $recipientIds = $conversation->participants()
+                ->where('user_id', '!=', $request->user()->id)
+                ->pluck('user_id');
+            foreach ($recipientIds as $recipientId) {
+                $recipient = User::query()->find($recipientId);
+                if ($recipient) {
+                    Alerts::send($recipient, 'message', 'پیام گروهی', $request->user()->name.' در «'.$conversation->title.'» پیام فرستاد.', '/messages/'.$conversation->id);
+                }
+            }
+        } else {
+            $peer = $conversation->peer($request->user());
+            Alerts::send($peer, 'message', 'پیام جدید', $request->user()->name.' برای شما پیام فرستاد.', '/messages/'.$conversation->id);
+        }
 
         try {
             broadcast(new MessageSent($message));
+            broadcast(new ConversationUpdated($conversation, $conversation->participantIds()));
         } catch (\Throwable $exception) {
             report($exception);
         }
@@ -141,9 +264,19 @@ class MessageController extends Controller
         abort_unless($conversation->involves($user), 403);
     }
 
+    private function assertAdmin(Conversation $conversation, User $user): void
+    {
+        $role = $conversation->participants()->where('user_id', $user->id)->value('role');
+        abort_unless($role === 'admin' || $conversation->created_by === $user->id, 403, 'فقط سازنده گروه می‌تواند اعضا را تغییر دهد.');
+    }
+
     private function markRead(Conversation $conversation, User $user): void
     {
-        $column = $conversation->user_one_id === $user->id ? 'user_one_read_at' : 'user_two_read_at';
-        $conversation->forceFill([$column => now()])->save();
+        $conversation->participants()->where('user_id', $user->id)->update(['last_read_at' => now()]);
+
+        if (! $conversation->isGroup()) {
+            $column = $conversation->user_one_id === $user->id ? 'user_one_read_at' : 'user_two_read_at';
+            $conversation->forceFill([$column => now()])->save();
+        }
     }
 }

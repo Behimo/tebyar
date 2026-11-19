@@ -20,3 +20,4 @@ apps/web/android/app/build/
 apps/web/android/local.properties
 apps/web/android/captures/
 apps/web/.capacitor/
+apps/web/.tools/

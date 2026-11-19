@@ -29,7 +29,7 @@ class Post extends Model
 
     public function media(): HasMany
     {
-        return $this->hasMany(PostMedia::class);
+        return $this->hasMany(PostMedia::class)->orderBy('position');
     }
 
     public function comments(): HasMany

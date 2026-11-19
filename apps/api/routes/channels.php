@@ -8,3 +8,7 @@ Broadcast::channel('conversation.{conversation}', function ($user, int $conversa
 
     return $record && $record->involves($user);
 });
+
+Broadcast::channel('user.{userId}', function ($user, int $userId) {
+    return (int) $user->id === $userId;
+});

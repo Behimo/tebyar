@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { api, ApiError } from './api'
+import { disconnectRealtime, realtime } from './realtime'
+import { writeCache } from './cache'
 import type { Me } from './types'
 
 type AuthValue = {
@@ -45,6 +47,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const payload = await api<{ data: Me }>('/me')
       storeMe(payload.data)
       setUser(payload.data)
+      if (payload.data.account_status === 'verified' && payload.data.role !== 'employer') {
+        void api<{ data: unknown }>('/conversations').then((p) => writeCache('tebyar-conversations', p.data)).catch(() => undefined)
+        void api<{ data: unknown }>('/communities').then((p) => writeCache('tebyar-communities', p.data)).catch(() => undefined)
+      }
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         localStorage.removeItem('tebyar_token')
@@ -59,6 +65,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void refresh()
   }, [])
+
+  useEffect(() => {
+    if (user?.account_status === 'verified' && user.role !== 'employer') realtime()
+    else disconnectRealtime()
+  }, [user?.id, user?.account_status, user?.role])
 
   const value = useMemo<AuthValue>(() => ({
     user,
@@ -79,6 +90,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem('tebyar_token')
       storeMe(null)
       setUser(null)
+      disconnectRealtime()
     },
   }), [user, loading])
 

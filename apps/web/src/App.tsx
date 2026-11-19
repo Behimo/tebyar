@@ -5,10 +5,10 @@ import { useAuth } from './auth'
 import { Skel } from './ui'
 import { Icon } from './icons'
 import {
-  Apply, Employer, Jobs, JobPage, Join, Login, Notifications, Otp, Pending, Settings,
+  Apply, Bookmarks, Employer, Jobs, JobPage, Join, Login, Notifications, Otp, Pending, Settings,
 } from './screens/account'
 import { CasePage, Communities, CommunityPage, Compose, Home, PollPage, PostPage, TopicPage } from './screens/social'
-import { Chat, DoctorPage, EditProfile, Messages, Profile, Search } from './screens/talk'
+import { Chat, DoctorPage, EditProfile, Explore, Messages, Profile } from './screens/talk'
 
 function Guest({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth()
@@ -36,7 +36,7 @@ function Shell() {
   const location = useLocation()
   const { user } = useAuth()
   const [sheet, setSheet] = useState(false)
-  const tabs = user?.account_status === 'verified' && user.role !== 'employer' && ['/', '/communities', '/messages', '/profile'].includes(location.pathname)
+  const tabs = user?.account_status === 'verified' && user.role !== 'employer' && ['/', '/communities', '/jobs', '/profile'].includes(location.pathname)
 
   const showTabs = tabs || location.pathname === '/compose' || location.pathname === '/case' || location.pathname === '/poll'
   return (
@@ -52,7 +52,7 @@ function Shell() {
             <button className="tab tab-create" type="button" onClick={() => setSheet(true)}>
               <span className="create-btn"><Icon name="plus" />انتشار</span>
             </button>
-            <Tab to="/messages" icon="chat" label="پیام‌ها" />
+            <Tab to="/jobs" icon="briefcase" label="فرصت‌ها" />
             <Tab to="/profile" icon="user" label="پروفایل" />
           </nav>
         )}
@@ -104,12 +104,14 @@ export default function App() {
             <Route path="/profile" element={<Profile />} />
             <Route path="/profile/edit" element={<EditProfile />} />
             <Route path="/doctors/:slug" element={<DoctorPage />} />
-            <Route path="/search" element={<Search />} />
+            <Route path="/explore" element={<Explore />} />
+            <Route path="/search" element={<Navigate to="/explore" replace />} />
             <Route path="/jobs" element={<Jobs />} />
             <Route path="/jobs/:id" element={<JobPage />} />
             <Route path="/jobs/:id/apply" element={<Apply />} />
             <Route path="/notifications" element={<Notifications />} />
             <Route path="/settings" element={<Settings />} />
+            <Route path="/bookmarks" element={<Bookmarks />} />
             <Route path="/employer" element={<Employer />} />
           </Route>
         </Route>

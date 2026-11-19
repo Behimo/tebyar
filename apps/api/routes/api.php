@@ -4,12 +4,14 @@ use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CommunityController;
 use App\Http\Controllers\Api\InboxController;
 use App\Http\Controllers\Api\JobController;
+use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SocialController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
+    Route::get('media/{path}', [MediaController::class, 'show'])->where('path', '.*');
     Route::post('auth/otp', [AuthController::class, 'requestOtp'])->middleware('throttle:otp');
     Route::post('auth/verify', [AuthController::class, 'verifyOtp'])->middleware('throttle:otp');
 
@@ -30,8 +32,10 @@ Route::prefix('v1')->group(function () {
             Route::delete('me/entries/{entry}', [ProfileController::class, 'destroyEntry']);
 
             Route::get('feed', [SocialController::class, 'feed']);
+            Route::get('explore', [SocialController::class, 'explore']);
             Route::get('posts/{post}', [SocialController::class, 'show']);
             Route::post('posts', [SocialController::class, 'store']);
+            Route::patch('posts/{post}', [SocialController::class, 'update']);
             Route::delete('posts/{post}', [SocialController::class, 'destroy']);
             Route::post('posts/{post}/reactions', [SocialController::class, 'react']);
             Route::delete('posts/{post}/reactions', [SocialController::class, 'unreact']);
@@ -58,8 +62,12 @@ Route::prefix('v1')->group(function () {
             Route::delete('doctors/{user}/follow', [ProfileController::class, 'unfollow']);
             Route::get('search', [InboxController::class, 'search']);
 
+            Route::get('connections', [MessageController::class, 'connections']);
             Route::get('conversations', [MessageController::class, 'index']);
             Route::post('conversations', [MessageController::class, 'open']);
+            Route::post('conversations/groups', [MessageController::class, 'storeGroup']);
+            Route::post('conversations/{conversation}/members', [MessageController::class, 'addMember']);
+            Route::delete('conversations/{conversation}/members/{user}', [MessageController::class, 'removeMember']);
             Route::get('conversations/{conversation}/messages', [MessageController::class, 'messages']);
             Route::post('conversations/{conversation}/messages', [MessageController::class, 'store']);
             Route::get('messages/{message}/attachment', [MessageController::class, 'attachment']);

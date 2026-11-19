@@ -1,0 +1,9 @@
+{
+  "name": "tebyar",
+  "private": true,
+  "scripts": {
+    "dev": "npm run dev --prefix apps/web",
+    "dev:lan": "npm run dev:lan --prefix apps/web",
+    "build": "npm run build --prefix apps/web"
+  }
+}

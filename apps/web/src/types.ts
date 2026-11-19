@@ -104,7 +104,7 @@ export type Topic = {
   is_demo: boolean
   created_at: string | null
   author: UserCard
-  reply_count: number
+  reply_count?: number
   disclaimer: string | null
   community: { slug: string; name: string }
   poll: {
@@ -123,7 +123,11 @@ export type Reply = {
 
 export type Conversation = {
   id: number
+  type: 'direct' | 'group'
+  title?: string | null
   peer: UserCard
+  members?: UserCard[]
+  am_admin?: boolean
   unread: boolean
   last_message: { body: string; created_at: string | null; mine: boolean } | null
 }
@@ -131,6 +135,8 @@ export type Conversation = {
 export type ChatMessage = {
   id: number
   body: string | null
+  sender_id?: number
+  sender_name?: string | null
   attachment_url: string | null
   attachment_name: string | null
   mine: boolean

@@ -245,18 +245,63 @@ class Present
 
     public static function conversation(Conversation $conversation, User $viewer): array
     {
-        $peer = $conversation->peer($viewer);
-        $last = $conversation->messages()->latest()->first();
-        $myRead = $conversation->user_one_id === $viewer->id
-            ? $conversation->user_one_read_at
-            : $conversation->user_two_read_at;
+        $last = $conversation->relationLoaded('messages') && $conversation->messages->isNotEmpty()
+            ? $conversation->messages->first()
+            : $conversation->messages()->latest()->first();
+
+        $participant = $conversation->participants->firstWhere('user_id', $viewer->id)
+            ?? $conversation->participants()->where('user_id', $viewer->id)->first();
+
+        $myRead = $participant?->last_read_at;
+        if (! $conversation->isGroup()) {
+            $legacy = $conversation->user_one_id === $viewer->id
+                ? $conversation->user_one_read_at
+                : $conversation->user_two_read_at;
+            $myRead = $myRead ?? $legacy;
+        }
+
         $unread = $last
             && $last->sender_id !== $viewer->id
             && (! $myRead || $last->created_at->gt($myRead));
 
+        $members = [];
+        if ($conversation->isGroup()) {
+            $rows = $conversation->relationLoaded('participants')
+                ? $conversation->participants
+                : $conversation->participants()->with('user')->get();
+            $members = $rows->map(fn ($row) => self::user($row->user, $viewer))->values()->all();
+        }
+
+        $peer = $conversation->isGroup()
+            ? [
+                'id' => null,
+                'name' => $conversation->title ?? 'گروه',
+                'slug' => null,
+                'role' => null,
+                'role_label' => '',
+                'specialty_title' => null,
+                'headline' => null,
+                'bio' => null,
+                'city' => null,
+                'avatar_url' => null,
+                'badges' => ['education' => false, 'identity' => false, 'license' => false, 'specialty' => false],
+                'followers_count' => 0,
+                'following_count' => 0,
+                'posts_count' => 0,
+                'is_following' => false,
+                'is_self' => false,
+                'is_demo' => false,
+                'anonymous' => false,
+            ]
+            : self::user($conversation->peer($viewer), $viewer);
+
         return [
             'id' => $conversation->id,
-            'peer' => self::user($peer, $viewer),
+            'type' => $conversation->isGroup() ? 'group' : 'direct',
+            'title' => $conversation->title,
+            'peer' => $peer,
+            'members' => $members,
+            'am_admin' => ($participant?->role === 'admin') || $conversation->created_by === $viewer->id,
             'unread' => $unread,
             'last_message' => $last ? [
                 'body' => $last->body ?: ($last->attachment_path ? 'پیوست' : ''),
@@ -268,17 +313,31 @@ class Present
 
     public static function message(Message $message, Conversation $conversation, User $viewer): array
     {
-        $peerRead = $message->sender_id === $conversation->user_one_id
-            ? $conversation->user_two_read_at
-            : $conversation->user_one_read_at;
+        $message->loadMissing('sender');
+        $read = false;
+        if ($message->sender_id === $viewer->id) {
+            if ($conversation->isGroup()) {
+                $others = $conversation->participants()->where('user_id', '!=', $viewer->id)->get();
+                $read = $others->isNotEmpty() && $others->every(
+                    fn ($row) => $row->last_read_at && $message->created_at->lte($row->last_read_at)
+                );
+            } else {
+                $peerRead = $message->sender_id === $conversation->user_one_id
+                    ? $conversation->user_two_read_at
+                    : $conversation->user_one_read_at;
+                $read = (bool) ($peerRead && $message->created_at->lte($peerRead));
+            }
+        }
 
         return [
             'id' => $message->id,
             'body' => $message->body,
+            'sender_id' => $message->sender_id,
+            'sender_name' => $conversation->isGroup() ? $message->sender->name : null,
             'attachment_url' => $message->attachment_path ? url('/api/v1/messages/'.$message->id.'/attachment') : null,
             'attachment_name' => $message->attachment_name,
             'mine' => $message->sender_id === $viewer->id,
-            'read' => $message->sender_id === $viewer->id && $peerRead && $message->created_at->lte($peerRead),
+            'read' => $read,
             'created_at' => $message->created_at?->toIso8601String(),
         ];
     }
@@ -330,6 +389,16 @@ class Present
 
     public static function publicUrl(?string $path): ?string
     {
-        return $path ? Storage::disk('public')->url($path) : null;
+        if (! $path) {
+            return null;
+        }
+
+        $relative = '/api/v1/media/'.ltrim($path, '/');
+        $configured = config('tebyar.asset_url');
+        if ($configured) {
+            return rtrim($configured, '/').$relative;
+        }
+
+        return $relative;
     }
 }

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\Block;
 use App\Models\Comment;
 use App\Models\DeviceToken;
+use App\Models\Hashtag;
 use App\Models\Post;
 use App\Models\Report;
 use App\Models\SupportTicket;
@@ -51,37 +52,47 @@ class InboxController extends Controller
         $hidden = Present::hiddenIds($viewer);
 
         if ($term === '') {
-            return response()->json(['doctors' => [], 'posts' => []]);
+            return response()->json(['doctors' => [], 'posts' => [], 'hashtags' => []]);
         }
 
         $like = '%'.$term.'%';
+        $tag = mb_strtolower(ltrim($term, '#'));
         $doctors = User::query()
             ->where('account_status', 'verified')
             ->whereIn('role', Membership::MEDICAL)
             ->when($hidden !== [], fn ($query) => $query->whereNotIn('id', $hidden))
-            ->where(fn ($q) => $q->where('name', 'like', $like)->orWhere('specialty_title', 'like', $like)->orWhere('city', 'like', $like))
+            ->where(fn ($q) => $q
+                ->where('name', 'like', $like)
+                ->orWhere('slug', 'like', $like)
+                ->orWhere('specialty_title', 'like', $like)
+                ->orWhere('city', 'like', $like))
             ->withCount(['followers', 'following', 'posts'])
             ->limit(20)
             ->get();
 
         $posts = Post::query()->visible()
             ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_id', $hidden))
-            ->where(function ($q) use ($like, $term) {
-                $q->where('body', 'like', $like);
-                if (str_starts_with($term, '#')) {
-                    $tag = mb_strtolower(ltrim($term, '#'));
-                    $q->orWhereHas('hashtags', fn ($h) => $h->where('name', $tag));
-                }
+            ->where(function ($q) use ($like, $tag) {
+                $q->where('body', 'like', $like)
+                    ->orWhereHas('hashtags', fn ($h) => $h->where('name', 'like', '%'.$tag.'%'))
+                    ->orWhereHas('author', fn ($author) => $author->where('name', 'like', $like)->orWhere('slug', 'like', $like));
             })
             ->with(['author', 'media', 'hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])
             ->latest()
-            ->limit(20)
+            ->limit(24)
             ->get();
+
+        $hashtags = Hashtag::query()
+            ->where('name', 'like', '%'.$tag.'%')
+            ->orderBy('name')
+            ->limit(12)
+            ->pluck('name');
 
         return response()->json([
             'doctors' => $doctors->map(fn (User $user) => Present::user($user, $viewer))->values(),
             'posts' => $posts->map(fn (Post $post) => Present::post($post, $viewer))->values(),
+            'hashtags' => $hashtags->values(),
         ]);
     }
 

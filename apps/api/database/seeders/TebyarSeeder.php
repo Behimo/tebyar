@@ -2,13 +2,19 @@
 
 namespace Database\Seeders;
 
+use App\Models\Bookmark;
+use App\Models\Comment;
 use App\Models\Community;
 use App\Models\Conversation;
+use App\Models\Hashtag;
 use App\Models\Organization;
 use App\Models\Post;
+use App\Models\Reaction;
+use App\Models\Story;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\Vacancy;
+use App\Models\VacancyApplication;
 use Illuminate\Database\Seeder;
 
 class TebyarSeeder extends Seeder
@@ -247,10 +253,12 @@ class TebyarSeeder extends Seeder
             $one = min($rezaei->id, $karimi->id);
             $two = max($rezaei->id, $karimi->id);
             $conversation = Conversation::query()->create([
+                'type' => 'direct',
                 'user_one_id' => $one,
                 'user_two_id' => $two,
                 'last_message_at' => now(),
             ]);
+            $conversation->ensureDirectParticipants();
             $conversation->messages()->create([
                 'sender_id' => $karimi->id,
                 'body' => 'محمد جان، اسلاید جلسه پنجشنبه را در انجمن قلب می‌گذارم. کیس‌ها ساختگی‌اند.',
@@ -269,6 +277,192 @@ class TebyarSeeder extends Seeder
             $post->hashtags()->create(['name' => 'قلب']);
 
             $admin->notify(new \App\Notifications\UserAlert('system', 'به طبیار خوش آمدید', 'این اعلان نمونه‌ای برای داشبورد است.', '/notifications'));
+        }
+
+        $this->seedRichDemo(
+            $rezaei,
+            $karimi,
+            $ahmadi,
+            $nouri,
+            $student,
+            $heart,
+            $org,
+            $employer,
+            $admin,
+        );
+    }
+
+    private function seedRichDemo(
+        User $rezaei,
+        User $karimi,
+        User $ahmadi,
+        User $nouri,
+        User $student,
+        Community $heart,
+        Organization $org,
+        User $employer,
+        User $admin,
+    ): void {
+        $demoPosts = Post::query()->where('is_demo', true)->get();
+        if ($demoPosts->count() < 10) {
+            $extra = [
+                [$rezaei, 'درمانگاه قلب این هفته شلوغ بود؛ جالب بود چند مورد با علائم غیرمعمول مراجعه کردند. #قلب'],
+                [$karimi, 'در مورد اگزامای حاد، بیشتر از پروتکل، ارتباط با بیمار ماندگار می‌ماند. #پوست'],
+                [$ahmadi, 'سندرم متابولیک در بخش داخلی دوباره محور بحث گردی بود. #داخلی'],
+                [$nouri, 'اولین روز شیفت جراحی؛ یادگیری بیشتر از اتاق عمل بود. #جراحی'],
+                [$student, 'امروز با رزیدنت قلب کیسِ آموزشی مرور کردیم (ساختگی).'],
+                [$karimi, 'چند منبع آموزشی برای همکاران رزیدنت پوست جمع کردم؛ اگر لازم است بفرستم.'],
+                [$rezaei, 'جلسه موردگی ماه آینده روی نارسایی قلبی تمرکز دارد.'],
+            ];
+            foreach ($extra as [$author, $body]) {
+                $author->posts()->create(['type' => 'text', 'is_demo' => true, 'body' => $body]);
+            }
+        }
+
+        $firstPost = Post::query()->where('is_demo', true)->oldest()->first();
+        if ($firstPost && Reaction::query()->where('post_id', $firstPost->id)->doesntExist()) {
+            foreach ([$karimi, $ahmadi, $student, $nouri] as $actor) {
+                Reaction::query()->create(['post_id' => $firstPost->id, 'user_id' => $actor->id, 'type' => 'like']);
+            }
+            Comment::query()->create([
+                'post_id' => $firstPost->id,
+                'user_id' => $karimi->id,
+                'body' => 'نکته خوبی بود؛ در تیم ما هم همین الگو دیده می‌شود.',
+            ]);
+            Comment::query()->create([
+                'post_id' => $firstPost->id,
+                'user_id' => $ahmadi->id,
+                'body' => 'برای هماهنگی بین‌رشته‌ای کاملاً موافقم.',
+            ]);
+            Bookmark::query()->create(['post_id' => $firstPost->id, 'user_id' => $student->id]);
+        }
+
+        $original = Post::query()->where('is_demo', true)->where('type', '!=', 'repost')->skip(1)->first();
+        if ($original && ! Post::query()->where('repost_of_id', $original->id)->exists()) {
+            $rezaei->posts()->create([
+                'type' => 'repost',
+                'is_demo' => true,
+                'repost_of_id' => $original->id,
+                'body' => 'برای همکاران رزیدنت مفید است.',
+            ]);
+            $ahmadi->posts()->create([
+                'type' => 'repost',
+                'is_demo' => true,
+                'repost_of_id' => $original->id,
+                'body' => null,
+            ]);
+        }
+
+        foreach ([[$rezaei, $heart], [$karimi, Community::query()->where('slug', 'dermatology')->first()], [$ahmadi, Community::query()->where('slug', 'internal')->first()], [$nouri, Community::query()->where('slug', 'surgery')->first()]] as [$member, $community]) {
+            if ($community) {
+                $member->communities()->syncWithoutDetaching([$community->id]);
+            }
+        }
+
+        if (Story::query()->count() === 0) {
+            foreach ([$rezaei, $karimi] as $author) {
+                $author->stories()->create([
+                    'path' => 'stories/demo-'.$author->slug.'.jpg',
+                    'expires_at' => now()->addDay(),
+                ]);
+            }
+        }
+
+        $karimi->entries()->firstOrCreate(['kind' => 'education', 'title' => 'تخصص پوست'], [
+            'subtitle' => 'دانشگاه شهید بهشتی',
+            'year' => '۱۳۹۳',
+        ]);
+
+        if (Vacancy::query()->count() < 4) {
+            Vacancy::query()->create([
+                'organization_id' => $org->id,
+                'title' => 'متخصص پوست — شیفت صبح',
+                'specialty' => 'پوست',
+                'city' => 'تهران',
+                'employment_type' => 'part_time',
+                'description' => 'آگهی نمایشی؛ فقط برای تست جریان درخواست.',
+                'status' => 'published',
+            ]);
+            Vacancy::query()->create([
+                'organization_id' => $org->id,
+                'title' => 'رزیدنت جراحی — مرکز آموزشی',
+                'specialty' => 'جراحی',
+                'city' => 'شیراز',
+                'employment_type' => 'full_time',
+                'description' => 'آگهی ساختگی برای نمایش فیلتر شهر.',
+                'status' => 'published',
+            ]);
+            Vacancy::query()->create([
+                'organization_id' => $org->id,
+                'title' => 'پزشک عمومی — درمانگاه شبانه‌روزی',
+                'specialty' => 'پزشکی عمومی',
+                'city' => 'اصفهان',
+                'employment_type' => 'full_time',
+                'description' => 'نمونه آگهی برای تب فرصت‌های شغلی.',
+                'status' => 'published',
+            ]);
+        }
+
+        $job = Vacancy::query()->where('specialty', 'قلب و عروق')->first();
+        if ($job && VacancyApplication::query()->where('vacancy_id', $job->id)->doesntExist()) {
+            VacancyApplication::query()->create([
+                'vacancy_id' => $job->id,
+                'user_id' => $rezaei->id,
+                'cover_letter' => 'درخواست نمایشی برای تست رابط کارفرما.',
+                'status' => 'pending',
+            ]);
+        }
+
+        $one = min($rezaei->id, $ahmadi->id);
+        $two = max($rezaei->id, $ahmadi->id);
+        if (! Conversation::query()->where('user_one_id', $one)->where('user_two_id', $two)->where('type', 'direct')->exists()) {
+            $dm = Conversation::query()->create([
+                'type' => 'direct',
+                'user_one_id' => $one,
+                'user_two_id' => $two,
+                'last_message_at' => now(),
+            ]);
+            $dm->ensureDirectParticipants();
+            $dm->messages()->create(['sender_id' => $ahmadi->id, 'body' => 'سلام محمد جان، درباره کیس داخلی دیروز نظری داری؟']);
+        }
+
+        if (! Conversation::query()->where('type', 'group')->where('title', 'گروه رزیدنت‌های قلب')->exists()) {
+            $group = Conversation::query()->create([
+                'type' => 'group',
+                'title' => 'گروه رزیدنت‌های قلب',
+                'created_by' => $rezaei->id,
+                'last_message_at' => now(),
+            ]);
+            foreach ([$rezaei, $karimi, $ahmadi, $nouri] as $member) {
+                $group->participants()->create([
+                    'user_id' => $member->id,
+                    'role' => $member->id === $rezaei->id ? 'admin' : 'member',
+                    'last_read_at' => $member->id === $rezaei->id ? now() : null,
+                ]);
+            }
+            $group->messages()->create([
+                'sender_id' => $rezaei->id,
+                'body' => 'دوستان، فردا جلسه موردگی ساعت ۸ — کیس‌ها ساختگی هستند.',
+            ]);
+            $group->messages()->create([
+                'sender_id' => $nouri->id,
+                'body' => 'ممنون، شرکت می‌کنم.',
+            ]);
+        }
+
+        $heartTag = Hashtag::query()->firstOrCreate(['name' => 'قلب']);
+        $skinTag = Hashtag::query()->firstOrCreate(['name' => 'پوست']);
+        Post::query()->where('is_demo', true)->where('body', 'like', '%#قلب%')->each(function (Post $post) use ($heartTag) {
+            $post->hashtags()->syncWithoutDetaching([$heartTag->id]);
+        });
+        Post::query()->where('is_demo', true)->where('body', 'like', '%#پوست%')->each(function (Post $post) use ($skinTag) {
+            $post->hashtags()->syncWithoutDetaching([$skinTag->id]);
+        });
+
+        if ($admin->unreadNotifications()->count() < 3) {
+            $rezaei->notify(new \App\Notifications\UserAlert('like', 'پسند جدید', 'سارا کریمی پست شما را پسندید.', '/'));
+            $karimi->notify(new \App\Notifications\UserAlert('comment', 'نظر جدید', 'علی احمدی روی پست شما نظر داد.', '/'));
+            $student->notify(new \App\Notifications\UserAlert('follow', 'دنبال‌کننده', 'دکتر محمد رضایی شما را دنبال کرد.', '/doctors/mohammad-rezaei'));
         }
     }
 

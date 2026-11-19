@@ -21,10 +21,11 @@ class CommunityController extends Controller
     public function index(Request $request): JsonResponse
     {
         $viewer = $request->user();
+        $joined = $viewer->communities()->pluck('communities.id')->all();
         $communities = Community::query()->withCount(['members', 'topics'])->orderBy('name')->get();
 
         return response()->json([
-            'data' => $communities->map(fn (Community $community) => $this->card($community, $viewer))->values(),
+            'data' => $communities->map(fn (Community $community) => $this->card($community, $viewer, $joined))->values(),
         ]);
     }
 
@@ -34,7 +35,7 @@ class CommunityController extends Controller
         $topics = $community->topics()->whereNull('hidden_at')->with(['author', 'community'])->latest()->paginate(20);
 
         return response()->json([
-            'data' => $this->card($community, $request->user()),
+            'data' => $this->card($community, $request->user(), $request->user()->communities()->pluck('communities.id')->all()),
             'topics' => $topics->getCollection()->map(fn (Topic $topic) => Present::topic($topic, $request->user()))->values(),
         ]);
     }
@@ -44,7 +45,7 @@ class CommunityController extends Controller
         $community = Community::query()->where('slug', $slug)->firstOrFail();
         $request->user()->communities()->syncWithoutDetaching([$community->id]);
 
-        return response()->json(['data' => $this->card($community->loadCount(['members', 'topics']), $request->user())]);
+        return response()->json(['data' => $this->card($community->loadCount(['members', 'topics']), $request->user(), $request->user()->communities()->pluck('communities.id')->all())]);
     }
 
     public function unfollow(Request $request, string $slug): JsonResponse
@@ -52,7 +53,7 @@ class CommunityController extends Controller
         $community = Community::query()->where('slug', $slug)->firstOrFail();
         $request->user()->communities()->detach($community->id);
 
-        return response()->json(['data' => $this->card($community->loadCount(['members', 'topics']), $request->user())]);
+        return response()->json(['data' => $this->card($community->loadCount(['members', 'topics']), $request->user(), $request->user()->communities()->pluck('communities.id')->all())]);
     }
 
     public function storeTopic(Request $request, string $slug): JsonResponse
@@ -189,8 +190,13 @@ class CommunityController extends Controller
         return response()->json(['data' => Present::topic($topic, $request->user())]);
     }
 
-    private function card(Community $community, $viewer): array
+    /** @param  array<int>  $joined */
+    private function card(Community $community, $viewer, array $joined = []): array
     {
+        if ($joined === []) {
+            $joined = $viewer->communities()->pluck('communities.id')->all();
+        }
+
         return [
             'id' => $community->id,
             'name' => $community->name,
@@ -199,7 +205,7 @@ class CommunityController extends Controller
             'description' => $community->description,
             'members_count' => $community->members_count ?? $community->members()->count(),
             'topics_count' => $community->topics_count ?? $community->topics()->count(),
-            'following' => $viewer->communities()->where('communities.id', $community->id)->exists(),
+            'following' => in_array($community->id, $joined, true),
         ];
     }
 }

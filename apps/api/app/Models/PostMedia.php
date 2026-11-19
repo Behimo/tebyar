@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class PostMedia extends Model
 {
-    protected $fillable = ['post_id', 'path', 'kind'];
+    protected $fillable = ['post_id', 'path', 'kind', 'position'];
 
     public function post(): BelongsTo
     {

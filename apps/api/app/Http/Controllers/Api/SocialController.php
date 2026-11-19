@@ -10,6 +10,7 @@ use App\Models\Story;
 use App\Models\StoryView;
 use App\Models\User;
 use App\Services\Alerts;
+use App\Support\MediaStore;
 use App\Support\Membership;
 use App\Support\Present;
 use Illuminate\Http\JsonResponse;
@@ -50,6 +51,30 @@ class SocialController extends Controller
         ]);
     }
 
+    public function explore(Request $request): JsonResponse
+    {
+        $viewer = $request->user();
+        $hidden = Present::hiddenIds($viewer);
+        $term = trim($request->string('q')->toString());
+
+        if ($term !== '') {
+            return app(InboxController::class)->search($request);
+        }
+
+        $posts = Post::query()->visible()
+            ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_id', $hidden))
+            ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
+            ->withCount(['reactions', 'comments', 'reposts'])
+            ->withViewerState($viewer)
+            ->latest('posts.created_at')
+            ->paginate(24);
+
+        return response()->json([
+            'data' => $posts->getCollection()->map(fn (Post $post) => Present::post($post, $viewer))->values(),
+            'next_page' => $posts->nextPageUrl(),
+        ]);
+    }
+
     public function show(Request $request, Post $post): JsonResponse
     {
         $this->visible($post, $request->user());
@@ -67,8 +92,9 @@ class SocialController extends Controller
             'body' => ['nullable', 'string', 'max:4000'],
             'link_url' => ['nullable', 'url', 'max:500'],
             'link_title' => ['nullable', 'string', 'max:180'],
-            'media' => ['nullable', 'array', 'max:4'],
+            'media' => ['nullable', 'array', 'max:6'],
             'media.*' => ['file', 'mimes:jpg,jpeg,png,webp,mp4,webm', 'max:51200'],
+            'cover_index' => ['nullable', 'integer', 'min:0'],
         ]);
 
         if (empty($data['body']) && empty($data['link_url']) && ! $request->hasFile('media')) {
@@ -91,11 +117,21 @@ class SocialController extends Controller
                 'link_title' => $data['link_title'] ?? null,
             ]);
 
-            foreach ($request->file('media', []) as $file) {
+            $files = array_values($request->file('media', []));
+            $cover = (int) ($data['cover_index'] ?? 0);
+            if ($files !== [] && $cover > 0 && $cover < count($files)) {
+                $picked = $files[$cover];
+                unset($files[$cover]);
+                array_unshift($files, $picked);
+                $files = array_values($files);
+            }
+
+            foreach ($files as $index => $file) {
                 $mime = $file->getMimeType() ?? '';
                 $post->media()->create([
-                    'path' => $file->store('posts', 'public'),
+                    'path' => MediaStore::storePublic($file, 'posts', $user->id),
                     'kind' => str_starts_with($mime, 'video') ? 'video' : 'image',
+                    'position' => $index,
                 ]);
             }
 
@@ -107,6 +143,31 @@ class SocialController extends Controller
         $post->load(['author', 'media', 'hashtags'])->loadCount(['reactions', 'comments', 'reposts']);
 
         return response()->json(['data' => Present::post($post, $user)], 201);
+    }
+
+    public function update(Request $request, Post $post): JsonResponse
+    {
+        abort_unless($post->user_id === $request->user()->id, 403);
+        $data = $request->validate([
+            'body' => ['nullable', 'string', 'max:4000'],
+            'link_url' => ['nullable', 'url', 'max:500'],
+            'link_title' => ['nullable', 'string', 'max:180'],
+        ]);
+        $payload = [];
+        if ($request->exists('body')) {
+            $payload['body'] = $data['body'] ?? null;
+        }
+        if ($request->exists('link_url')) {
+            $payload['link_url'] = $data['link_url'] ?? null;
+        }
+        if ($request->exists('link_title')) {
+            $payload['link_title'] = $data['link_title'] ?? null;
+        }
+        $post->fill($payload)->save();
+        $this->syncTags($post, $data['body'] ?? '');
+        $post->load(['author', 'media', 'hashtags'])->loadCount(['reactions', 'comments', 'reposts']);
+
+        return response()->json(['data' => Present::post($post, $request->user(), true)]);
     }
 
     public function destroy(Request $request, Post $post): JsonResponse
@@ -226,7 +287,7 @@ class SocialController extends Controller
             ->with('author')
             ->withExists(['views as seen' => fn ($query) => $query->where('user_id', $viewer->id)])
             ->latest()
-            ->limit(24)
+            ->limit(80)
             ->get();
 
         return response()->json(['data' => $stories->map(fn (Story $story) => Present::story($story, $viewer))->values()]);
@@ -236,11 +297,11 @@ class SocialController extends Controller
     {
         $this->assertCanPost($request->user());
         $request->validate([
-            'media' => ['required', 'image', 'max:8192'],
+            'media' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,heic,heif', 'max:12288'],
         ]);
 
         $story = $request->user()->stories()->create([
-            'path' => $request->file('media')->store('stories', 'public'),
+            'path' => MediaStore::storePublic($request->file('media'), 'stories', $request->user()->id),
             'expires_at' => now()->addHours(config('tebyar.story_hours')),
         ]);
         $story->load('author');

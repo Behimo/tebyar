@@ -2,8 +2,9 @@ import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
-import type { Me, Notice, UserCard, Vacancy } from '../types'
+import type { Me, Notice, Post, UserCard, Vacancy } from '../types'
 import { Empty, Person, Top, Toggle, errText } from '../ui'
+import { PostGrid } from '../post-ui'
 import { Brand } from '../icons'
 
 const roles = [
@@ -197,12 +198,31 @@ export function Notifications() {
   )
 }
 
+export function Bookmarks() {
+  const [posts, setPosts] = useState<Post[]>([])
+  const [error, setError] = useState('')
+  useEffect(() => {
+    void api<{ data: Post[] }>('/bookmarks').then((payload) => setPosts(payload.data)).catch((reason) => setError(errText(reason)))
+  }, [])
+  return (
+    <>
+      <Top title="ذخیره‌شده‌ها" back />
+      <div className="screen-body">
+        {error && <div className="error pad">{error}</div>}
+        {posts.length === 0 && <Empty title="ذخیره‌ای نیست" text="پست‌های بوکمارک‌شده اینجا می‌آیند." />}
+        <PostGrid posts={posts} />
+      </div>
+    </>
+  )
+}
+
 export function Settings() {
   const { user, refresh, logout } = useAuth()
   const [blocks, setBlocks] = useState<UserCard[]>([])
   const [tickets, setTickets] = useState<{ id: number; subject: string; status: string; messages: { body: string }[] }[]>([])
   const [message, setMessage] = useState('')
   const [supportOpen, setSupportOpen] = useState(false)
+  const [cacheMsg, setCacheMsg] = useState('')
   const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark')
   const [notifyInteractions, setNotifyInteractions] = useState(user?.notify_interactions ?? true)
   const [notifyMessages, setNotifyMessages] = useState(user?.notify_messages ?? true)
@@ -275,6 +295,38 @@ export function Settings() {
           </div>
         </div>
 
+        <h2 className="section-title section-title--tight">محتوا و ناوبری</h2>
+        <div className="card pad-in settings-card">
+          <Link className="list-row" to="/profile/edit">
+            <div className="body"><div className="title">ویرایش پروفایل</div><div className="sub">نام، بیو، شهر و تخصص</div></div>
+          </Link>
+          <Link className="list-row" to="/bookmarks">
+            <div className="body"><div className="title">ذخیره‌شده‌ها</div><div className="sub">پست‌های بوکمارک‌شده</div></div>
+          </Link>
+          <Link className="list-row" to="/explore">
+            <div className="body"><div className="title">اکسپلور</div><div className="sub">مرور همه پست‌ها</div></div>
+          </Link>
+          <Link className="list-row" to="/messages">
+            <div className="body"><div className="title">پیام‌ها</div><div className="sub">گفتگوهای خصوصی و گروهی</div></div>
+          </Link>
+        </div>
+
+        <h2 className="section-title section-title--tight">داده و عملکرد</h2>
+        <div className="card pad-in settings-card">
+          <button
+            className="list-row"
+            type="button"
+            onClick={() => {
+              const keys = Object.keys(sessionStorage).filter((key) => key.startsWith('tebyar-'))
+              keys.forEach((key) => sessionStorage.removeItem(key))
+              setCacheMsg('حافظه موقت پاک شد. فید دوباره از سرور می‌آید.')
+            }}
+          >
+            <div className="body"><div className="title">پاک‌کردن کش محلی</div><div className="sub">فید، انجمن‌ها و پیام‌های ذخیره‌شده در مرورگر</div></div>
+          </button>
+          {cacheMsg && <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>{cacheMsg}</p>}
+        </div>
+
         <h2 className="section-title section-title--tight">حساب</h2>
         <div className="card pad-in settings-card settings-account">
           <Link className="list-row" to="/pending">
@@ -314,6 +366,17 @@ export function Settings() {
           <button className="list-row" type="button" onClick={() => void logout()}>
             <div className="body"><div className="title">خروج</div><div className="sub">پایان نشست فعلی</div></div>
           </button>
+        </div>
+
+        <h2 className="section-title section-title--tight">درباره</h2>
+        <div className="card pad-in settings-card">
+          <div className="kv">
+            <span className="k">نسخه وب</span>
+            <span className="muted">۰.۹ · نمونه محصول</span>
+          </div>
+          <p className="muted" style={{ fontSize: 12, lineHeight: 1.7, marginTop: 8 }}>
+            طبیار شبکه اجتماعی پزشکان است. محتوای بالینی نمایشی جایگزین تشخیص یا درمان نیست.
+          </p>
         </div>
       </div>
     </>

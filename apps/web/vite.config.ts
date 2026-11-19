@@ -1,12 +1,28 @@
+import { networkInterfaces } from 'node:os'
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 import { VitePWA } from 'vite-plugin-pwa'
+
+function localLanIp(): string | undefined {
+  for (const interfaces of Object.values(networkInterfaces())) {
+    if (!interfaces) continue
+    for (const iface of interfaces) {
+      const family = iface.family
+      const isV4 = family === 'IPv4' || family === 4
+      if (isV4 && !iface.internal) return iface.address
+    }
+  }
+  return undefined
+}
+
+const lanIp = process.env.VITE_HMR_HOST || localLanIp()
 
 export default defineConfig({
   plugins: [
     react(),
     VitePWA({
       registerType: 'autoUpdate',
+      devOptions: { enabled: false },
       includeAssets: ['favicon.svg'],
       manifest: {
         name: 'طبیار',
@@ -25,7 +41,10 @@ export default defineConfig({
     }),
   ],
   server: {
+    host: true,
     port: 5173,
+    strictPort: true,
+  ...(lanIp ? { hmr: { host: lanIp, port: 5173 } } : {}),
     proxy: {
       '/api': 'http://127.0.0.1:8000',
       '/storage': 'http://127.0.0.1:8000',

@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use App\Models\ProfileEntry;
 use App\Models\User;
 use App\Services\VerificationService;
+use App\Support\MediaStore;
 use App\Support\Membership;
 use App\Support\PatientPrivacy;
 use App\Support\Present;
@@ -46,10 +47,10 @@ class ProfileController extends Controller
     {
         $this->ensureMedical($request->user());
         $request->validate([
-            'avatar' => ['required', 'image', 'max:4096'],
+            'avatar' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,heic,heif', 'max:4096'],
         ], ['avatar.required' => 'تصویر پروفایل را انتخاب کنید.']);
 
-        $path = $request->file('avatar')->store('avatars', 'public');
+        $path = MediaStore::storePublic($request->file('avatar'), 'avatars', $request->user()->id);
         $request->user()->forceFill(['avatar_path' => $path])->save();
 
         return response()->json(['data' => Present::me($request->user()->fresh())]);
@@ -144,11 +145,34 @@ class ProfileController extends Controller
             ->withCount(['followers', 'following', 'posts'])
             ->firstOrFail();
 
+        $viewer = $request->user();
+        $postQuery = fn () => $user->posts()->visible()
+            ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
+            ->withCount(['reactions', 'comments', 'reposts'])
+            ->withViewerState($viewer)
+            ->latest('posts.created_at');
+
         return response()->json([
-            'data' => Present::user($user, $request->user(), true),
-            'posts' => $user->posts()->visible()->with(['author', 'media', 'hashtags'])->withCount(['reactions', 'comments', 'reposts'])->withViewerState($request->user())->latest('posts.created_at')->limit(12)->get()
-                ->map(fn ($post) => Present::post($post, $request->user()))
+            'data' => Present::user($user, $viewer, true),
+            'posts' => $postQuery()->where('type', '!=', 'repost')->limit(24)->get()
+                ->map(fn ($post) => Present::post($post, $viewer))
                 ->values(),
+            'reposts' => $postQuery()->where('type', 'repost')->limit(24)->get()
+                ->map(fn ($post) => Present::post($post, $viewer))
+                ->values(),
+            'topics' => $user->topics()->whereNull('topics.hidden_at')->with(['author', 'community'])->withCount('replies')->latest()->limit(12)->get()
+                ->map(fn ($topic) => Present::topic($topic, $viewer))
+                ->values(),
+            'communities' => $user->communities()->withCount(['members', 'topics'])->get()->map(fn ($community) => [
+                'id' => $community->id,
+                'name' => $community->name,
+                'slug' => $community->slug,
+                'specialty' => $community->specialty,
+                'description' => $community->description,
+                'members_count' => $community->members_count,
+                'topics_count' => $community->topics_count,
+                'following' => true,
+            ])->values(),
         ]);
     }
 

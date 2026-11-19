@@ -143,12 +143,21 @@ a.btn.primary, a.btn.ghost { display: inline-flex; align-items: center; justify-
 .composer .field { flex: 1; min-width: 120px; margin-bottom: 0; }
 
 /* handoff layouts */
-.profile-screen { padding-top: 0; }
+.profile-screen { padding-top: 0; overflow-x: hidden; }
+.screen.is-active > .screen-body.post-detail-screen {
+  flex: 1;
+  min-height: 0;
+}
+.screen.is-active:has(.post-detail-screen) {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
 .profile-hero-badges {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  justify-content: center;
+  justify-content: flex-start;
   margin-top: 8px;
 }
 .profile-hero-badges .chips { display: flex; justify-content: center; }
@@ -187,7 +196,7 @@ a.btn.primary, a.btn.ghost { display: inline-flex; align-items: center; justify-
 .settings-account .list-row { border-bottom: 1px solid var(--line); }
 
 .card.flush { padding-bottom: 8px; }
-.card.flush .post-photo { margin: 0; border-radius: var(--radius-card) var(--radius-card) 0 0; }
+.card.flush .post-photo { margin: 0; border-radius: 0; }
 
 .bubble.me .attach { background: rgba(255, 255, 255, 0.15); color: #fff; }
 .attach { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }
@@ -264,6 +273,19 @@ a.btn, button.btn, .btn.btn-block {
 .bubble.them a { color: var(--cobalt); }
 
 /* ورودی فایل */
+.composer-file {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  border: 0;
+}
+.composer-bar .icon-btn { width: 40px; height: 40px; }
+.composer-bar .icon-btn svg { width: 22px; height: 22px; }
+.explore-tags { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .story-own input[type="file"] { display: none !important; }
 
 input[type="file"],

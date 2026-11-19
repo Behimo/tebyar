@@ -21,15 +21,54 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  return fetch(`${base}/api/v1${path}`, { ...init, headers }).then(async (response) => {
-    const text = await response.text()
-    const data = text ? JSON.parse(text) as { message?: string; errors?: Record<string, string[]> } : null
-    if (!response.ok) {
-      const details = data?.errors ? Object.values(data.errors).flat().join(' ') : ''
-      throw new ApiError(details || data?.message || 'خطایی رخ داد.', response.status)
-    }
-    return data as T
-  })
+  return fetch(`${base}/api/v1${path}`, { ...init, headers })
+    .then(async (response) => {
+      const text = await response.text()
+      let data: { message?: string; errors?: Record<string, string[]> } | null = null
+      if (text) {
+        try {
+          data = JSON.parse(text) as { message?: string; errors?: Record<string, string[]> }
+        } catch {
+          data = null
+        }
+      }
+      if (!response.ok) {
+        const details = data?.errors ? Object.values(data.errors).flat().join(' ') : ''
+        const fallback =
+          response.status === 502 || response.status === 503
+            ? 'سرور API روشن نیست. در ترمینال: cd apps\\api سپس php artisan serve --host=0.0.0.0 --port=8000'
+            : 'خطایی رخ داد.'
+        throw new ApiError(details || data?.message || fallback, response.status)
+      }
+      return data as T
+    })
+    .catch((reason) => {
+      if (reason instanceof ApiError) throw reason
+      throw new ApiError(
+        'اتصال به سرور برقرار نشد. Vite و php artisan serve هر دو باید روشن باشند.',
+        0,
+      )
+    })
+}
+
+/** مسیر رسانه را به مبدأ درست وصل می‌کند: وب از همان origin، اپ از VITE_API_URL */
+export function assetUrl(url?: string | null): string | undefined {
+  if (!url) return undefined
+  const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  const mediaPath = (path: string) => {
+    if (path.startsWith('/storage/')) return `/api/v1/media${path.slice('/storage'.length)}`
+    if (path.startsWith('/api/v1/media/')) return path
+    return null
+  }
+  const local = mediaPath(url)
+  if (local) return `${base}${local}`
+  try {
+    const remote = mediaPath(new URL(url).pathname)
+    if (remote) return `${base}${remote}`
+  } catch {
+    return url
+  }
+  return url
 }
 
 export function when(iso?: string | null): string {

@@ -1,19 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api } from '../api'
+import { api, assetUrl } from '../api'
 import { useAuth } from '../auth'
-import type { Post, Story, Topic, Reply, CommunityCard } from '../types'
-import { Badges, Empty, Person, PostCard, Skel, Top, errText } from '../ui'
+import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
+import { Badges, Empty, ListSkel, MentionBox, Person, PostCard, Skel, Top, errText } from '../ui'
+import { ComposeMediaField as ComposeMediaPicker, InstagramPostDetail } from '../post-ui'
 import { Brand, Icon } from '../icons'
+import { readCache, writeCache } from '../cache'
+import { buildStoryTiles, mergeStoryLists, myStories } from '../stories'
 
-const sampleStories = [
-  { name: 'سارا', src: '/design/story-sara-coffee.jpg' },
-  { name: 'محمد', src: '/design/story-mohammad.jpg' },
-  { name: 'نیلوفر', src: '/design/story-niloufar.jpg' },
-  { name: 'کسری', src: '/design/story-kasra.jpg' },
-]
+const communitiesKey = 'tebyar-communities'
 
 const feedMemory: { suggested?: Post[]; following?: Post[]; stories?: Story[] } = {}
+const storiesKey = 'tebyar-stories'
+
+function readStories(): Story[] {
+  if (feedMemory.stories) return feedMemory.stories
+  try {
+    const raw = sessionStorage.getItem(storiesKey)
+    if (!raw) return []
+    const rows = JSON.parse(raw) as Story[]
+    feedMemory.stories = rows
+    return rows
+  } catch {
+    return []
+  }
+}
+
+function writeStories(rows: Story[]) {
+  feedMemory.stories = rows
+  sessionStorage.setItem(storiesKey, JSON.stringify(rows))
+}
 
 function readPosts(tab: 'suggested' | 'following'): Post[] | null {
   if (feedMemory[tab]) return feedMemory[tab]
@@ -33,18 +50,89 @@ function writePosts(tab: 'suggested' | 'following', posts: Post[]) {
   sessionStorage.setItem(`tebyar-feed-${tab}`, JSON.stringify(posts))
 }
 
+function useInboxBadges() {
+  const [messages, setMessages] = useState(0)
+  const [notices, setNotices] = useState(0)
+  useEffect(() => {
+    void api<{ data: Conversation[] }>('/conversations')
+      .then((payload) => setMessages(payload.data.filter((item) => item.unread).length))
+      .catch(() => undefined)
+    void api<{ data: Notice[] }>('/notifications')
+      .then((payload) => setNotices(payload.data.filter((item) => !item.read_at).length))
+      .catch(() => undefined)
+  }, [])
+  return { messages, notices }
+}
+
+function StoryReel({
+  items,
+  start,
+  onClose,
+  onSeen,
+}: {
+  items: Story[]
+  start: number
+  onClose: () => void
+  onSeen: (id: number) => void
+}) {
+  const [index, setIndex] = useState(start)
+  const story = items[index]
+  const go = (next: number) => {
+    if (next >= items.length || next < 0) onClose()
+    else setIndex(next)
+  }
+
+  useEffect(() => {
+    if (!story?.id) return
+    onSeen(story.id)
+    void api(`/stories/${story.id}/view`, { method: 'POST' }).catch(() => undefined)
+  }, [story?.id])
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => go(index + 1), 5000)
+    return () => window.clearTimeout(timer)
+  }, [index, items.length])
+
+  if (!story) return null
+  return (
+    <div className="story-viewer is-open">
+      <div className="progress">
+        {items.map((item, i) => (
+          <span key={item.id || i} className={i === index ? 'active' : i < index ? 'done' : ''}>
+            <i />
+          </span>
+        ))}
+      </div>
+      <div className="who">
+        <b>{story.author.name}</b>
+        <button className="icon-btn" type="button" onClick={onClose} aria-label="بستن"><Icon name="back" /></button>
+      </div>
+      <div className="media"><img src={assetUrl(story.media_url) || story.media_url} alt="" /></div>
+      <button className="story-hit story-hit-next" type="button" aria-label="بعدی" onClick={() => go(index + 1)} />
+      <button className="story-hit story-hit-prev" type="button" aria-label="قبلی" onClick={() => go(index - 1)} />
+    </div>
+  )
+}
+
 export function Home() {
   const [tab, setTab] = useState<'suggested' | 'following'>('suggested')
   const [posts, setPosts] = useState<Post[]>(() => readPosts('suggested') ?? [])
-  const [stories, setStories] = useState<Story[]>(() => feedMemory.stories ?? [])
+  const [stories, setStories] = useState<Story[]>(readStories)
+  const [storiesLoaded, setStoriesLoaded] = useState(() => readStories().length > 0)
   const [loading, setLoading] = useState(() => readPosts('suggested') == null)
   const [fresh, setFresh] = useState(false)
   const [error, setError] = useState('')
-  const [active, setActive] = useState<Story | null>(null)
+  const [reel, setReel] = useState<Story[] | null>(null)
+  const [reelAt, setReelAt] = useState(0)
+  const [storyUploading, setStoryUploading] = useState(false)
+  const [storyPreview, setStoryPreview] = useState<string | null>(null)
   const { user } = useAuth()
-
+  const badges = useInboxBadges()
+  const mine = myStories(stories, user)
+  const feedGen = useRef(0)
   useEffect(() => {
     let gone = false
+    const gen = ++feedGen.current
     const cached = readPosts(tab)
     if (cached) {
       setPosts(cached)
@@ -56,7 +144,7 @@ export function Home() {
       setFresh(true)
     }
     api<{ data: Post[] }>(`/feed?tab=${tab}`).then((feed) => {
-      if (gone) return
+      if (gone || gen !== feedGen.current) return
       setPosts(feed.data)
       writePosts(tab, feed.data)
       setError('')
@@ -72,76 +160,148 @@ export function Home() {
     let gone = false
     api<{ data: Story[] }>('/stories').then((storyList) => {
       if (gone) return
-      feedMemory.stories = storyList.data
+      writeStories(storyList.data)
       setStories(storyList.data)
-    }).catch(() => undefined)
+    }).catch(() => undefined).finally(() => {
+      if (!gone) setStoriesLoaded(true)
+    })
     return () => { gone = true }
   }, [])
 
   const publishStory = async (file: File) => {
+    const preview = URL.createObjectURL(file)
+    setStoryPreview(preview)
+    setStoryUploading(true)
     const body = new FormData()
     body.append('media', file)
-    await api('/stories', { method: 'POST', body })
-    setTab((current) => current)
-    const storyList = await api<{ data: Story[] }>('/stories')
-    setStories(storyList.data)
+    try {
+      const created = await api<{ data: Story }>('/stories', { method: 'POST', body })
+      setStories((current) => {
+        const next = mergeStoryLists(current, [created.data])
+        writeStories(next)
+        return next
+      })
+      const storyList = await api<{ data: Story[] }>('/stories')
+      setStories((current) => {
+        const next = mergeStoryLists(current, storyList.data)
+        writeStories(next)
+        return next
+      })
+      URL.revokeObjectURL(preview)
+      setStoryPreview(null)
+    } catch {
+      setError('آپلود استوری ناموفق بود.')
+    } finally {
+      setStoryUploading(false)
+    }
   }
 
-  const tiles = stories.length > 0
-    ? stories.map((story) => ({ id: String(story.id), name: story.author.name.split(' ').slice(-1)[0] || story.author.name, src: story.media_url, live: story }))
-    : sampleStories.map((story) => ({ id: story.name, name: story.name, src: story.src, live: null as Story | null }))
+  const tiles = buildStoryTiles(stories, user, storiesLoaded)
+  const ownCover = storyPreview || assetUrl(mine[mine.length - 1]?.media_url)
+  const mineUnseen = mine.some((row) => !row.seen)
+
+  const openReel = (items: Story[], at = 0) => {
+    if (items.length === 0) return
+    setReel(items)
+    setReelAt(at)
+  }
 
   return (
     <>
       <header className="topbar">
         <Brand />
         <div className="topbar-actions">
-          <Link className="icon-btn" to="/search" aria-label="جست‌وجوی پزشکان"><Icon name="search" /></Link>
-          <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها"><Icon name="bell" /><span className="badge">۱</span></Link>
+          <Link className="icon-btn" to="/explore" aria-label="اکسپلور"><Icon name="explore" /></Link>
+          <Link className="icon-btn" to="/messages" aria-label="پیام‌ها">
+            <Icon name="chat" />
+            {badges.messages > 0 && <span className="badge">{badges.messages > 9 ? '۹+' : String(badges.messages)}</span>}
+          </Link>
+          <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها">
+            <Icon name="bell" />
+            {badges.notices > 0 && <span className="badge">{badges.notices > 9 ? '۹+' : String(badges.notices)}</span>}
+          </Link>
         </div>
       </header>
       <div className="screen-body">
         <div className="stories" dir="rtl" aria-label="استوری‌ها">
-          <label className="story story-own">
-            <span className="story-tile"><span className="plus">+</span><span className="own-label">استوری شما</span></span>
-            <input hidden type="file" accept="image/*" onChange={(event) => {
-              const file = event.target.files?.[0]
-              if (file) void publishStory(file)
-            }} />
-          </label>
-          {tiles.filter((story) => story.live?.author.id !== user?.id).map((story) => (
-            <button key={story.id} className="story" type="button" onClick={() => {
-              if (story.live) {
-                setActive(story.live)
-                void api(`/stories/${story.live.id}/view`, { method: 'POST' })
-              } else {
-                setActive({ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] })
-              }
-            }}>
-              <span className="story-tile"><img src={story.src} alt="" /><span className="caption">{story.name}</span></span>
+          <div className={`story story-own${ownCover ? ' has-story' : ''}${mineUnseen ? ' is-unseen' : ownCover ? ' is-seen' : ''}${storyUploading ? ' is-uploading' : ''}`}>
+            {ownCover ? (
+              <button className="story-tile" type="button" onClick={() => openReel(mine, 0)}>
+                <img src={ownCover} alt="" />
+              </button>
+            ) : (
+              <label className="story-tile">
+                <span className="plus">+</span>
+                <span className="own-label">استوری شما</span>
+                <input hidden type="file" accept="image/*" onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void publishStory(file).catch(() => setError('آپلود استوری ناموفق بود.'))
+                  event.currentTarget.value = ''
+                }} />
+              </label>
+            )}
+            {ownCover && (
+              <label className="story-add" aria-label="استوری جدید">
+                +
+                <input hidden type="file" accept="image/*" onChange={(event) => {
+                  const file = event.target.files?.[0]
+                  if (file) void publishStory(file).catch(() => setError('آپلود استوری ناموفق بود.'))
+                  event.currentTarget.value = ''
+                }} />
+              </label>
+            )}
+          </div>
+          {tiles.map((story) => (
+            <button
+              key={story.id}
+              className={`story story-ring-in${story.unseen ? ' is-unseen' : story.items.length ? ' is-seen' : ''}`}
+              type="button"
+              onClick={() => {
+                if (story.items.length) openReel(story.items, story.items.findIndex((row) => !row.seen) >= 0 ? story.items.findIndex((row) => !row.seen) : 0)
+                else openReel([{ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] }])
+              }}
+            >
+              <span className="story-tile"><img src={assetUrl(story.src) || story.src} alt="" /><span className="caption">{story.name}</span></span>
             </button>
           ))}
         </div>
         <div className="filters pad">
           <button className={tab === 'following' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
           <button className={tab === 'suggested' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('suggested')}>برای شما</button>
-          <Link className="filter-chip" to="/jobs">کاریابی</Link>
         </div>
         {loading && posts.length === 0 && <Skel />}
         {error && <div className="banner banner-danger">{error}</div>}
         {!loading && posts.length === 0 && <Empty title="هنوز پستی نیست" text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را بنویسید." />}
         <div className={fresh ? 'feed-in' : undefined}>
           {posts.map((post) => (
-            <PostCard key={post.id} post={post} onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))} />
+            <PostCard
+              key={post.id}
+              post={post}
+              variant={tab === 'following' ? 'following' : 'featured'}
+              onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))}
+              onRemove={() => {
+                feedGen.current += 1
+                setPosts((list) => {
+                  const next = list.filter((item) => item.id !== post.id)
+                  writePosts(tab, next)
+                  return next
+                })
+              }}
+            />
           ))}
         </div>
       </div>
-      {active && (
-        <div className="story-viewer is-open">
-          <div className="progress"><span className="active"><i /></span></div>
-          <div className="who"><b>{active.author.name}</b><button className="icon-btn" type="button" onClick={() => setActive(null)} aria-label="بستن"><Icon name="back" /></button></div>
-          <div className="media"><img src={active.media_url} alt="" /></div>
-        </div>
+      {reel && (
+        <StoryReel
+          items={reel}
+          start={reelAt}
+          onClose={() => setReel(null)}
+          onSeen={(id) => setStories((rows) => {
+            const next = rows.map((row) => row.id === id ? { ...row, seen: true } : row)
+            writeStories(next)
+            return next
+          })}
+        />
       )}
     </>
   )
@@ -154,11 +314,19 @@ export function Compose() {
   const [title, setTitle] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [slides, setSlides] = useState<import('../post-ui').ComposeSlide[]>([])
+  const [coverIndex, setCoverIndex] = useState(0)
 
-  const submit = async (form: FormData) => {
+  const submit = async () => {
     setBusy(true)
     setError('')
     try {
+      const form = new FormData()
+      if (body) form.set('body', body)
+      if (link) form.set('link_url', link)
+      if (title) form.set('link_title', title)
+      slides.forEach((slide) => form.append('media[]', slide.file))
+      form.set('cover_index', String(coverIndex))
       const created = await api<{ data: Post }>('/posts', { method: 'POST', body: form })
       navigate(`/posts/${created.data.id}`)
     } catch (reason) {
@@ -171,16 +339,9 @@ export function Compose() {
   return (
     <>
       <Top title="انتشار پست" back />
-      <form className="screen-body pad stack" onSubmit={(event) => {
-        event.preventDefault()
-        const form = new FormData(event.currentTarget)
-        if (body) form.set('body', body)
-        if (link) form.set('link_url', link)
-        if (title) form.set('link_title', title)
-        void submit(form)
-      }}>
-        <textarea className="area" name="body" value={body} onChange={(event) => setBody(event.target.value)} placeholder="تجربه کاری، خبر یا نکته‌ای برای همکاران..." />
-        <label className="lbl">تصویر یا ویدئو<input className="field" name="media[]" type="file" accept="image/*,video/mp4,video/webm" multiple /></label>
+      <form className="screen-body pad stack compose-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
+        <MentionBox multiline className="area" value={body} onChange={setBody} placeholder="تجربه کاری، خبر یا نکته‌ای برای همکاران... برای منشن @ بنویسید" />
+        <ComposeMediaPicker slides={slides} coverIndex={coverIndex} onSlides={setSlides} onCover={setCoverIndex} />
         <input className="field" value={link} onChange={(event) => setLink(event.target.value)} placeholder="لینک مقاله یا خبر" />
         <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="عنوان لینک" />
         {error && <div className="error">{error}</div>}
@@ -194,57 +355,47 @@ export function PostPage() {
   const { id } = useParams()
   const [post, setPost] = useState<Post | null>(null)
   const [error, setError] = useState('')
-  const [text, setText] = useState('')
 
-  const load = () => {
-    api<{ data: Post }>(`/posts/${id}`).then((payload) => setPost(payload.data)).catch((reason) => setError(errText(reason)))
-  }
-  useEffect(load, [id])
+  useEffect(() => {
+    if (!id) return
+    void api<{ data: Post }>(`/posts/${id}`).then((payload) => setPost(payload.data)).catch((reason) => setError(errText(reason)))
+  }, [id])
 
   return (
     <>
-      <Top title="پست" back action={<button className="text-btn" type="button" onClick={() => void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'post', id: Number(id), reason: 'other' }) })}>گزارش</button>} />
-      <div className="screen-body pad stack">
-        {error && <div className="error">{error}</div>}
-        {post && <PostCard post={post} onChange={setPost} />}
-        {post?.comments?.map((comment) => (
-          <div key={comment.id} className="card stack">
-            <Person user={comment.author} />
-            <p>{comment.body}</p>
-            {comment.replies?.map((reply) => (
-              <div key={reply.id} className="link-card">
-                <b>{reply.author.name}</b>
-                <p>{reply.body}</p>
-              </div>
-            ))}
-          </div>
-        ))}
-        <form className="stack" onSubmit={(event) => {
-          event.preventDefault()
-          void api(`/posts/${id}/comments`, { method: 'POST', body: JSON.stringify({ body: text }) }).then(() => {
-            setText('')
-            load()
-          }).catch((reason) => setError(errText(reason)))
-        }}>
-          <textarea className="area" value={text} onChange={(event) => setText(event.target.value)} placeholder="نظر شما" />
-          <button className="btn primary" type="submit">ثبت نظر</button>
-        </form>
+      <Top title={post?.author.name || 'پست'} back action={<button className="text-btn" type="button" onClick={() => void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'post', id: Number(id), reason: 'other' }) })}>گزارش</button>} />
+      <div className="screen-body post-detail-screen">
+        {error && <div className="error pad">{error}</div>}
+        {post && <InstagramPostDetail post={post} onChange={setPost} onRemove={() => history.back()} />}
       </div>
     </>
   )
 }
 
 export function Communities() {
-  const [items, setItems] = useState<CommunityCard[]>([])
+  const [items, setItems] = useState<CommunityCard[]>(() => readCache<CommunityCard[]>(communitiesKey) ?? [])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(() => readCache<CommunityCard[]>(communitiesKey) == null)
   useEffect(() => {
-    api<{ data: CommunityCard[] }>('/communities').then((payload) => setItems(payload.data)).catch((reason) => setError(errText(reason)))
+    let gone = false
+    api<{ data: CommunityCard[] }>('/communities').then((payload) => {
+      if (gone) return
+      setItems(payload.data)
+      writeCache(communitiesKey, payload.data)
+      setError('')
+    }).catch((reason) => {
+      if (!gone && items.length === 0) setError(errText(reason))
+    }).finally(() => {
+      if (!gone) setLoading(false)
+    })
+    return () => { gone = true }
   }, [])
   return (
     <>
       <Top title="انجمن‌ها" />
       <div className="screen-body pad stack">
         {error && <div className="error">{error}</div>}
+        {loading && items.length === 0 && <ListSkel rows={5} />}
         {items.map((item) => (
           <Link key={item.id} to={`/communities/${item.slug}`} className="card stack">
             <div className="row between"><b>{item.name}</b><span className="chip">{item.specialty}</span></div>
@@ -260,14 +411,18 @@ export function Communities() {
 export function CommunityPage() {
   const { slug } = useParams()
   const { user } = useAuth()
-  const [card, setCard] = useState<CommunityCard | null>(null)
+  const cachedList = readCache<CommunityCard[]>(communitiesKey)
+  const cachedCard = cachedList?.find((row) => row.slug === slug) ?? null
+  const [card, setCard] = useState<CommunityCard | null>(cachedCard)
   const [topics, setTopics] = useState<Topic[]>([])
   const [error, setError] = useState('')
+  const [loading, setLoading] = useState(!cachedCard)
 
   const load = () => {
     api<{ data: CommunityCard; topics: Topic[] }>(`/communities/${slug}`)
-      .then((payload) => { setCard(payload.data); setTopics(payload.topics) })
+      .then((payload) => { setCard(payload.data); setTopics(payload.topics); setError('') })
       .catch((reason) => setError(errText(reason)))
+      .finally(() => setLoading(false))
   }
   useEffect(load, [slug])
 
@@ -276,6 +431,7 @@ export function CommunityPage() {
       <Top title={card?.name || 'انجمن'} back />
       <div className="screen-body pad stack">
         {error && <div className="error">{error}</div>}
+        {loading && topics.length === 0 && <ListSkel rows={4} />}
         {card && (
           <div className="card stack">
             <p>{card.description}</p>

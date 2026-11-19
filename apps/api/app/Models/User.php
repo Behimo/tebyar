@@ -108,6 +108,11 @@ class User extends Authenticatable implements FilamentUser
         return $this->belongsToMany(Community::class, 'community_members')->withTimestamps();
     }
 
+    public function topics(): HasMany
+    {
+        return $this->hasMany(Topic::class);
+    }
+
     public function organization(): HasOne
     {
         return $this->hasOne(Organization::class, 'owner_id');

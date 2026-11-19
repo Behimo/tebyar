@@ -1,6 +1,8 @@
 <?php
 
 return [
+    /** آدرس پایه برای /storage — روی سرور واقعی همان دامنهٔ API را بگذارید؛ در غیر این صورت از همان host درخواست استفاده می‌شود. */
+    'asset_url' => env('ASSET_URL'),
     'sms' => env('SMS_DRIVER', 'log'),
     'kavenegar_key' => env('KAVENEGAR_API_KEY'),
     'kavenegar_sender' => env('KAVENEGAR_SENDER', '10004346'),
