@@ -1,0 +1,322 @@
+<?php
+
+namespace App\Support;
+
+use App\Models\Block;
+use App\Models\Comment;
+use App\Models\Conversation;
+use App\Models\Message;
+use App\Models\PollOption;
+use App\Models\Post;
+use App\Models\SavedVacancy;
+use App\Models\Story;
+use App\Models\Topic;
+use App\Models\TopicReply;
+use App\Models\User;
+use App\Models\Vacancy;
+use Illuminate\Support\Facades\Storage;
+
+class Present
+{
+    public static function user(User $user, ?User $viewer = null, bool $detail = false): array
+    {
+        $card = [
+            'id' => $user->id,
+            'name' => $user->name,
+            'slug' => $user->slug,
+            'role' => $user->role,
+            'role_label' => $user->roleLabel(),
+            'specialty_title' => $user->specialty_title,
+            'headline' => $user->headline,
+            'bio' => $detail ? $user->bio : null,
+            'city' => $user->city,
+            'avatar_url' => self::publicUrl($user->avatar_path),
+            'badges' => [
+                'education' => (bool) $user->education_verified_at,
+                'identity' => (bool) $user->identity_verified_at,
+                'license' => (bool) $user->license_verified_at,
+                'specialty' => (bool) $user->specialty_verified_at,
+            ],
+            'followers_count' => $user->followers_count ?? $user->followers()->count(),
+            'following_count' => $user->following_count ?? $user->following()->count(),
+            'posts_count' => $user->posts_count ?? $user->posts()->visible()->count(),
+            'is_following' => $viewer ? $viewer->following()->where('users.id', $user->id)->exists() : false,
+            'is_self' => $viewer?->id === $user->id,
+            'is_demo' => (bool) $user->is_demo,
+            'anonymous' => false,
+        ];
+
+        if ($detail) {
+            $card['entries'] = $user->entries()->latest()->get()->map(fn ($entry) => [
+                'id' => $entry->id,
+                'kind' => $entry->kind,
+                'title' => $entry->title,
+                'subtitle' => $entry->subtitle,
+                'body' => $entry->body,
+                'year' => $entry->year,
+            ])->values();
+        }
+
+        return $card;
+    }
+
+    public static function me(User $user): array
+    {
+        $latest = $user->verificationRequests()->latest()->first();
+        $card = self::user($user, $user, true);
+        $card['phone'] = $user->phone;
+        $card['account_status'] = $user->account_status;
+        $card['status_label'] = $user->statusLabel();
+        $card['staff_role'] = $user->staff_role;
+        $card['privacy_dm'] = $user->privacy_dm;
+        $card['notify_interactions'] = $user->notify_interactions;
+        $card['notify_messages'] = $user->notify_messages;
+        $card['bio'] = $user->bio;
+        $card['can_create_case'] = Membership::canCreateCase($user);
+        $card['can_create_poll'] = Membership::canCreatePoll($user);
+        $card['verification'] = $latest ? [
+            'type' => $latest->type,
+            'status' => $latest->status,
+            'note' => $latest->note,
+        ] : null;
+        $org = $user->organization;
+        $card['organization'] = $org ? [
+            'id' => $org->id,
+            'name' => $org->name,
+            'type' => $org->type,
+            'type_label' => $org->typeLabel(),
+            'city' => $org->city,
+            'about' => $org->about,
+            'status' => $org->status,
+        ] : null;
+
+        return $card;
+    }
+
+    public static function anonymousAuthor(): array
+    {
+        return [
+            'id' => null,
+            'name' => 'پزشک تأییدشده',
+            'slug' => null,
+            'role' => null,
+            'role_label' => 'عضو تأییدشده',
+            'specialty_title' => null,
+            'headline' => null,
+            'bio' => null,
+            'city' => null,
+            'avatar_url' => null,
+            'badges' => ['education' => false, 'identity' => true, 'license' => true, 'specialty' => false],
+            'followers_count' => 0,
+            'following_count' => 0,
+            'posts_count' => 0,
+            'is_following' => false,
+            'is_self' => false,
+            'is_demo' => false,
+            'anonymous' => true,
+        ];
+    }
+
+    public static function post(Post $post, User $viewer, bool $withComments = false): array
+    {
+        $original = null;
+        if ($post->relationLoaded('original') && $post->original) {
+            $original = self::post($post->original, $viewer);
+        }
+
+        $card = [
+            'id' => $post->id,
+            'type' => $post->type,
+            'body' => $post->body,
+            'link_url' => $post->link_url,
+            'link_title' => $post->link_title,
+            'hashtags' => $post->hashtags->pluck('name')->values(),
+            'media' => $post->media->map(fn ($media) => [
+                'url' => self::publicUrl($media->path),
+                'kind' => $media->kind,
+            ])->values(),
+            'reactions_count' => $post->reactions_count ?? $post->reactions()->count(),
+            'comments_count' => $post->comments_count ?? $post->comments()->whereNull('hidden_at')->count(),
+            'reposts_count' => $post->reposts_count ?? $post->reposts()->visible()->count(),
+            'reacted' => $post->reactions()->where('user_id', $viewer->id)->exists(),
+            'bookmarked' => $post->bookmarks()->where('user_id', $viewer->id)->exists(),
+            'is_demo' => (bool) $post->is_demo,
+            'created_at' => $post->created_at?->toIso8601String(),
+            'author' => self::user($post->author, $viewer),
+            'repost_of' => $original,
+        ];
+
+        if ($withComments) {
+            $card['comments'] = $post->comments()
+                ->whereNull('parent_id')
+                ->whereNull('hidden_at')
+                ->with(['author', 'replies' => fn ($q) => $q->whereNull('hidden_at')->with('author')])
+                ->oldest()
+                ->get()
+                ->map(fn (Comment $comment) => self::comment($comment, $viewer))
+                ->values();
+        }
+
+        return $card;
+    }
+
+    public static function comment(Comment $comment, User $viewer): array
+    {
+        return [
+            'id' => $comment->id,
+            'body' => $comment->body,
+            'created_at' => $comment->created_at?->toIso8601String(),
+            'author' => self::user($comment->author, $viewer),
+            'replies' => $comment->relationLoaded('replies')
+                ? $comment->replies->map(fn (Comment $reply) => [
+                    'id' => $reply->id,
+                    'body' => $reply->body,
+                    'created_at' => $reply->created_at?->toIso8601String(),
+                    'author' => self::user($reply->author, $viewer),
+                ])->values()
+                : [],
+        ];
+    }
+
+    public static function story(Story $story, User $viewer): array
+    {
+        return [
+            'id' => $story->id,
+            'media_url' => self::publicUrl($story->path),
+            'expires_at' => $story->expires_at?->toIso8601String(),
+            'seen' => $story->views()->where('user_id', $viewer->id)->exists(),
+            'mine' => $story->user_id === $viewer->id,
+            'author' => self::user($story->author, $viewer),
+        ];
+    }
+
+    public static function topic(Topic $topic, User $viewer): array
+    {
+        $mask = $topic->anonymous && $topic->user_id !== $viewer->id;
+        $options = $topic->options()->withCount('votes')->orderBy('position')->get();
+        $total = $options->sum('votes_count');
+        $vote = $topic->votes()->where('user_id', $viewer->id)->first();
+
+        return [
+            'id' => $topic->id,
+            'kind' => $topic->kind,
+            'title' => $topic->title,
+            'body' => $topic->body,
+            'anonymous' => $topic->anonymous,
+            'is_demo' => (bool) $topic->is_demo,
+            'created_at' => $topic->created_at?->toIso8601String(),
+            'author' => $mask ? self::anonymousAuthor() : self::user($topic->author, $viewer),
+            'reply_count' => $topic->replies()->whereNull('hidden_at')->count(),
+            'disclaimer' => in_array($topic->kind, ['case', 'poll'], true)
+                ? 'این محتوا توصیه درمانی یا اجماع علمی نیست و فقط برای گفت‌وگوی همکاران است.'
+                : null,
+            'community' => [
+                'slug' => $topic->community->slug,
+                'name' => $topic->community->name,
+            ],
+            'poll' => $topic->kind === 'poll' ? [
+                'total' => $total,
+                'voted_option_id' => $vote?->poll_option_id,
+                'options' => $options->map(fn (PollOption $option) => [
+                    'id' => $option->id,
+                    'label' => $option->label,
+                    'votes' => $option->votes_count,
+                    'percent' => $total > 0 ? (int) round(($option->votes_count / $total) * 100) : 0,
+                ])->values(),
+            ] : null,
+        ];
+    }
+
+    public static function reply(TopicReply $reply, User $viewer): array
+    {
+        return [
+            'id' => $reply->id,
+            'body' => $reply->body,
+            'created_at' => $reply->created_at?->toIso8601String(),
+            'author' => self::user($reply->author, $viewer),
+        ];
+    }
+
+    public static function conversation(Conversation $conversation, User $viewer): array
+    {
+        $peer = $conversation->peer($viewer);
+        $last = $conversation->messages()->latest()->first();
+        $myRead = $conversation->user_one_id === $viewer->id
+            ? $conversation->user_one_read_at
+            : $conversation->user_two_read_at;
+        $unread = $last
+            && $last->sender_id !== $viewer->id
+            && (! $myRead || $last->created_at->gt($myRead));
+
+        return [
+            'id' => $conversation->id,
+            'peer' => self::user($peer, $viewer),
+            'unread' => $unread,
+            'last_message' => $last ? [
+                'body' => $last->body ?: ($last->attachment_path ? 'پیوست' : ''),
+                'created_at' => $last->created_at?->toIso8601String(),
+                'mine' => $last->sender_id === $viewer->id,
+            ] : null,
+        ];
+    }
+
+    public static function message(Message $message, Conversation $conversation, User $viewer): array
+    {
+        $peerRead = $message->sender_id === $conversation->user_one_id
+            ? $conversation->user_two_read_at
+            : $conversation->user_one_read_at;
+
+        return [
+            'id' => $message->id,
+            'body' => $message->body,
+            'attachment_url' => $message->attachment_path ? url('/api/v1/messages/'.$message->id.'/attachment') : null,
+            'attachment_name' => $message->attachment_name,
+            'mine' => $message->sender_id === $viewer->id,
+            'read' => $message->sender_id === $viewer->id && $peerRead && $message->created_at->lte($peerRead),
+            'created_at' => $message->created_at?->toIso8601String(),
+        ];
+    }
+
+    public static function vacancy(Vacancy $vacancy, ?User $viewer = null): array
+    {
+        $org = $vacancy->organization;
+
+        return [
+            'id' => $vacancy->id,
+            'title' => $vacancy->title,
+            'specialty' => $vacancy->specialty,
+            'city' => $vacancy->city,
+            'employment_type' => $vacancy->employment_type,
+            'employment_label' => $vacancy->employmentLabel(),
+            'description' => $vacancy->description,
+            'created_at' => $vacancy->created_at?->toIso8601String(),
+            'saved' => $viewer ? SavedVacancy::query()->where('user_id', $viewer->id)->where('vacancy_id', $vacancy->id)->exists() : false,
+            'applied' => $viewer ? $vacancy->applications()->where('user_id', $viewer->id)->exists() : false,
+            'organization' => [
+                'name' => $org->name,
+                'type' => $org->type,
+                'type_label' => $org->typeLabel(),
+                'city' => $org->city,
+                'about' => $org->about,
+            ],
+        ];
+    }
+
+    public static function hiddenIds(User $viewer): array
+    {
+        return Block::query()
+            ->where('blocker_id', $viewer->id)
+            ->orWhere('blocked_id', $viewer->id)
+            ->get(['blocker_id', 'blocked_id'])
+            ->flatMap(fn (Block $block) => [$block->blocker_id, $block->blocked_id])
+            ->reject(fn ($id) => (int) $id === $viewer->id)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public static function publicUrl(?string $path): ?string
+    {
+        return $path ? Storage::disk('public')->url($path) : null;
+    }
+}
