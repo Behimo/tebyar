@@ -87,24 +87,19 @@ export function Empty({ title, text }: { title: string; text: string }) {
 
 export function Skel() {
   return (
-    <div className="feed-skel" aria-busy="true" aria-label="در حال بارگذاری">
+    <div className="stack" aria-busy="true" aria-label="در حال بارگذاری">
+      <div className="load-line" />
       {[0, 1].map((item) => (
-        <article key={item} className="skel-card">
+        <article key={item} className="card post-card skel-card">
           <div className="post-head">
             <span className="skel skel-avatar" />
             <div className="meta">
-              <span className="skel skel-line" style={{ width: '38%' }} />
-              <span className="skel skel-line" style={{ width: '22%', marginTop: 8 }} />
+              <span className="skel skel-line" style={{ width: '42%' }} />
+              <span className="skel skel-line" style={{ width: '26%', marginTop: 6 }} />
             </div>
           </div>
           <div className="skel skel-photo" />
-          <div className="skel-actions">
-            <span className="skel skel-dot" />
-            <span className="skel skel-dot" />
-            <span className="skel skel-dot" />
-          </div>
-          <span className="skel skel-line" style={{ width: '78%' }} />
-          <span className="skel skel-line" style={{ width: '46%' }} />
+          <div className="skel skel-line" style={{ width: '70%', margin: '10px 12px 0' }} />
         </article>
       ))}
     </div>
@@ -139,29 +134,29 @@ export function PostCard({ post, onChange, flush = false }: { post: Post; onChan
       <div className="post-head">
         <Avatar user={post.author} />
         <div className="meta">
-          <div className="name-row">
-            <span className="name">{post.author.name}</span>
-            <Badges user={post.author} />
+          <div className="name">{post.author.name}</div>
+          <div className="spec">
+            {post.author.specialty_title || post.author.role_label}
+            {post.created_at && <span className="when"> · {when(post.created_at)}</span>}
           </div>
-          <div className="spec">{post.author.specialty_title || post.author.role_label}</div>
+          <Badges user={post.author} />
         </div>
       </div>
+      {post.body && <p className="post-caption">{post.body}</p>}
       {media}
+      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}: {post.repost_of.body}</p>}
+      {post.link_url && <a className="post-link" href={post.link_url}>{post.link_title || post.link_url}</a>}
       <div className="actions">
         <button className="bookmark" type="button" aria-pressed={saved} aria-label="ذخیره" onClick={() => {
           setSaved(!saved)
           void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
-        }}><Icon name="bookmark" solid={saved} /></button>
+        }}><Icon name="bookmark" /></button>
         <div className="reactions">
-          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" solid={post.reacted} /> {post.reactions_count > 0 ? fa.format(post.reactions_count) : ''}</button>
-          <Link className="react comment" to={`/posts/${post.id}`}><Icon name="comment" /> {post.comments_count > 0 ? fa.format(post.comments_count) : ''}</Link>
-          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="share" /> {post.reposts_count > 0 ? fa.format(post.reposts_count) : ''}</button>
+          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" /> {fa.format(post.reactions_count)}</button>
+          <Link className="react comment" to={`/posts/${post.id}`}><Icon name="comment" /> {fa.format(post.comments_count)}</Link>
+          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="share" /> {fa.format(post.reposts_count)}</button>
         </div>
       </div>
-      {post.body && <p className="post-caption">{post.body}</p>}
-      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}: {post.repost_of.body}</p>}
-      {post.link_url && <a className="post-link" href={post.link_url}>{post.link_title || post.link_url}</a>}
-      {post.created_at && <p className="post-time">{when(post.created_at)}</p>}
     </article>
   )
 }

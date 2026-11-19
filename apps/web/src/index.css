@@ -3,8 +3,6 @@
 .filters { direction: rtl; }
 .app-root { width: 100%; }
 .screen-body { padding-top: 0; }
-.screen-body.pad { padding-top: 12px; }
-.screen-body.pad { padding-top: 12px; }
 .topbar .page-title { margin: 0; }
 .input.ltr, .field.ltr, .otp-row input { direction: ltr; text-align: center; }
 a.card { color: inherit; }
@@ -157,7 +155,7 @@ a.btn.primary, a.btn.ghost { display: inline-flex; align-items: center; justify-
 .stats-note { font-size: 12px; padding: 0 16px 8px; }
 .profile-disclaimer { font-size: 12.5px; margin: 0 16px 12px; line-height: 1.65; }
 .about-card { margin: 0 16px 12px; }
-.profile-feed .card.flush { margin: 0; border-radius: 0; }
+.profile-feed .card.flush { margin: 0 16px 12px; }
 .profile-edit-hero { margin-bottom: 16px; }
 .profile-edit-hero .avatar-upload { margin-top: 8px; }
 .profile-actions .btn svg,
@@ -189,7 +187,7 @@ a.btn.primary, a.btn.ghost { display: inline-flex; align-items: center; justify-
 .settings-account .list-row { border-bottom: 1px solid var(--line); }
 
 .card.flush { padding-bottom: 8px; }
-.card.flush .post-photo { margin: 0; border-radius: 0; }
+.card.flush .post-photo { margin: 0; border-radius: var(--radius-card) var(--radius-card) 0 0; }
 
 .bubble.me .attach { background: rgba(255, 255, 255, 0.15); color: #fff; }
 .attach { display: flex; align-items: center; gap: 8px; text-decoration: none; color: inherit; }

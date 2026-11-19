@@ -23,13 +23,12 @@ const paths: Record<string, ReactNode> = {
   link: <><path d="M10 13a4 4 0 0 0 5.7.3l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.2 1.2" /><path d="M14 11a4 4 0 0 0-5.7-.3L5.8 13.2a4 4 0 0 0 5.7 5.7l1.2-1.2" /></>,
 }
 
-const filled = new Set(['more'])
+const filled = new Set(['heart', 'comment', 'bookmark', 'more'])
 
-export function Icon({ name, solid = false }: { name: keyof typeof paths | string; solid?: boolean }) {
+export function Icon({ name }: { name: keyof typeof paths | string }) {
   const body = paths[name]
-  const useFill = solid || filled.has(name)
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill={useFill ? 'currentColor' : 'none'} stroke={useFill ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2 : 1.75} strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill={filled.has(name) ? 'currentColor' : 'none'} stroke={filled.has(name) ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2 : 1.75} strokeLinecap="round" strokeLinejoin="round">
       {body}
     </svg>
   )

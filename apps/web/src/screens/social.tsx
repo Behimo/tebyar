@@ -103,8 +103,7 @@ export function Home() {
       <div className="screen-body">
         <div className="stories" dir="rtl" aria-label="استوری‌ها">
           <label className="story story-own">
-            <span className="story-tile"><span className="plus">+</span></span>
-            <span className="story-name">استوری شما</span>
+            <span className="story-tile"><span className="plus">+</span><span className="own-label">استوری شما</span></span>
             <input hidden type="file" accept="image/*" onChange={(event) => {
               const file = event.target.files?.[0]
               if (file) void publishStory(file)
@@ -119,15 +118,14 @@ export function Home() {
                 setActive({ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] })
               }
             }}>
-              <span className="story-tile"><img src={story.src} alt="" /></span>
-              <span className="story-name">{story.name}</span>
+              <span className="story-tile"><img src={story.src} alt="" /><span className="caption">{story.name}</span></span>
             </button>
           ))}
         </div>
-        <div className="home-tabs">
-          <button className={tab === 'suggested' ? 'is-on' : ''} type="button" onClick={() => setTab('suggested')}>برای شما</button>
-          <button className={tab === 'following' ? 'is-on' : ''} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
-          <Link to="/jobs">کاریابی</Link>
+        <div className="filters pad">
+          <button className={tab === 'following' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
+          <button className={tab === 'suggested' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('suggested')}>برای شما</button>
+          <Link className="filter-chip" to="/jobs">کاریابی</Link>
         </div>
         {loading && posts.length === 0 && <Skel />}
         {error && <div className="banner banner-danger">{error}</div>}
