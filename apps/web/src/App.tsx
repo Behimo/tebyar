@@ -1,9 +1,9 @@
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom'
-import { AnimatePresence, motion } from 'motion/react'
 import { useAuth } from './auth'
 import { Skel } from './ui'
+import { Icon } from './icons'
 import {
   Apply, Employer, Jobs, JobPage, Join, Login, Notifications, Otp, Pending, Settings,
 } from './screens/account'
@@ -38,61 +38,53 @@ function Shell() {
   const [sheet, setSheet] = useState(false)
   const tabs = user?.account_status === 'verified' && user.role !== 'employer' && ['/', '/communities', '/messages', '/profile'].includes(location.pathname)
 
+  const showTabs = tabs || location.pathname === '/compose' || location.pathname === '/case' || location.pathname === '/poll'
   return (
-    <div className="device">
-      <AnimatePresence mode="wait">
-        <motion.div
-          key={location.pathname}
-          className="screen"
-          initial={{ opacity: 0, x: -18 }}
-          animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: 14 }}
-          transition={{ duration: 0.28, ease: [0.22, 0.8, 0.36, 1] }}
-        >
+    <div className="app-root">
+      <div className="app-column">
+        <div className="screen is-active">
           <Outlet />
-        </motion.div>
-      </AnimatePresence>
-      {tabs && (
-        <nav className="tabbar">
-          <Tab to="/" label="خانه" />
-          <Tab to="/communities" label="انجمن" />
-          <button type="button" onClick={() => setSheet(true)}>
-            <span className="create-fab">+</span>
-            انتشار
-          </button>
-          <Tab to="/messages" label="پیام‌ها" />
-          <Tab to="/profile" label="پروفایل" />
-        </nav>
-      )}
-      {sheet && (
-        <div className="sheet-backdrop" onClick={() => setSheet(false)}>
-          <div className="sheet" onClick={(event) => event.stopPropagation()}>
-            <div className="handle" />
-            <Link className="choice" to="/compose" onClick={() => setSheet(false)}>پست اجتماعی</Link>
-            {user?.can_create_case && <Link className="choice" to="/case" onClick={() => setSheet(false)}>طرح کیس ناشناس</Link>}
-            {user?.can_create_poll && <Link className="choice" to="/poll" onClick={() => setSheet(false)}>نظرسنجی تخصصی</Link>}
-          </div>
         </div>
-      )}
+        {showTabs && (
+          <nav className="tabbar">
+            <Tab to="/" icon="home" label="خانه" />
+            <Tab to="/communities" icon="users" label="انجمن" />
+            <button className="tab tab-create" type="button" onClick={() => setSheet(true)}>
+              <span className="create-btn"><Icon name="plus" />انتشار</span>
+            </button>
+            <Tab to="/messages" icon="chat" label="پیام‌ها" />
+            <Tab to="/profile" icon="user" label="پروفایل" />
+          </nav>
+        )}
+        {sheet && (
+          <div className="overlay is-open" onClick={() => setSheet(false)}>
+            <div className="sheet" onClick={(event) => event.stopPropagation()}>
+              <h2>انتشار</h2>
+              <Link className="sheet-item" to="/compose" onClick={() => setSheet(false)}>پست اجتماعی</Link>
+              {user?.can_create_case && <Link className="sheet-item" to="/case" onClick={() => setSheet(false)}>طرح کیس ناشناس</Link>}
+              {user?.can_create_poll && <Link className="sheet-item" to="/poll" onClick={() => setSheet(false)}>نظرسنجی تخصصی</Link>}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
   )
 }
 
-function Tab({ to, label }: { to: string; label: string }) {
+function Tab({ to, icon, label }: { to: string; icon: string; label: string }) {
   const location = useLocation()
   const active = location.pathname === to
   return (
-    <Link to={to} className={active ? 'active' : ''}>
-      {active && <motion.span className="pill" layoutId="tab-pill" transition={{ type: 'spring', stiffness: 420, damping: 32 }} />}
-      <span>{label}</span>
+    <Link to={to} className={active ? 'tab is-active' : 'tab'}>
+      <Icon name={icon} />
+      {label}
     </Link>
   )
 }
 
 export default function App() {
   return (
-    <div className="stage">
-      <Routes>
+    <Routes>
         <Route element={<Shell />}>
           <Route path="/login" element={<Guest><Login /></Guest>} />
           <Route path="/otp" element={<Guest><Otp /></Guest>} />
@@ -123,6 +115,5 @@ export default function App() {
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
       </Routes>
-    </div>
   )
 }

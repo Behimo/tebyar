@@ -4,6 +4,14 @@ import { api } from '../api'
 import { useAuth } from '../auth'
 import type { Post, Story, Topic, Reply, CommunityCard } from '../types'
 import { Badges, Empty, Person, PostCard, Skel, Top, errText } from '../ui'
+import { Brand, Icon } from '../icons'
+
+const sampleStories = [
+  { name: 'سارا', src: '/design/story-sara-coffee.jpg' },
+  { name: 'محمد', src: '/design/story-mohammad.jpg' },
+  { name: 'نیلوفر', src: '/design/story-niloufar.jpg' },
+  { name: 'کسری', src: '/design/story-kasra.jpg' },
+]
 
 export function Home() {
   const [tab, setTab] = useState<'suggested' | 'following'>('suggested')
@@ -42,56 +50,58 @@ export function Home() {
     setStories(storyList.data)
   }
 
+  const tiles = stories.length > 0
+    ? stories.map((story) => ({ id: String(story.id), name: story.author.name.split(' ').slice(-1)[0] || story.author.name, src: story.media_url, live: story }))
+    : sampleStories.map((story) => ({ id: story.name, name: story.name, src: story.src, live: null as Story | null }))
+
   return (
     <>
       <header className="topbar">
-        <div className="brand"><b>طبیار</b><span>ارتباط، یادگیری، رشد</span></div>
-        <span style={{ flex: 1 }} />
-        <Link className="icon-btn" to="/search" aria-label="جستجو">⌕</Link>
-        <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها">◌</Link>
+        <Brand />
+        <div className="topbar-actions">
+          <Link className="icon-btn" to="/search" aria-label="جست‌وجوی پزشکان"><Icon name="search" /></Link>
+          <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها"><Icon name="bell" /><span className="badge">۱</span></Link>
+        </div>
       </header>
       <div className="screen-body">
-        <div className="stories">
-          <label className="story">
-            <span className="story-tile">+</span>
-            استوری
+        <div className="stories" dir="rtl" aria-label="استوری‌ها">
+          <label className="story story-own">
+            <span className="story-tile"><span className="plus">+</span><span className="own-label">استوری شما</span></span>
             <input hidden type="file" accept="image/*" onChange={(event) => {
               const file = event.target.files?.[0]
               if (file) void publishStory(file)
             }} />
           </label>
-          {stories.filter((story) => story.author.id !== user?.id).map((story) => (
-            <button key={story.id} className={story.seen ? 'story seen' : 'story has-ring'} type="button" onClick={() => {
-              setActive(story)
-              void api(`/stories/${story.id}/view`, { method: 'POST' })
+          {tiles.filter((story) => story.live?.author.id !== user?.id).map((story) => (
+            <button key={story.id} className="story has-ring" type="button" onClick={() => {
+              if (story.live) {
+                setActive(story.live)
+                void api(`/stories/${story.live.id}/view`, { method: 'POST' })
+              } else {
+                setActive({ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] })
+              }
             }}>
-              <span className="story-tile">{story.author.name.slice(0, 1)}</span>
-              {story.author.name.split(' ').slice(-1)}
+              <span className="story-tile"><img src={story.src} alt="" /><span className="caption">{story.name}</span></span>
             </button>
           ))}
         </div>
-        <div className="pad row">
-          <button className={tab === 'suggested' ? 'btn primary' : 'btn'} type="button" onClick={() => setTab('suggested')}>پیشنهادی</button>
-          <button className={tab === 'following' ? 'btn primary' : 'btn'} type="button" onClick={() => setTab('following')}>دنبال‌شده‌ها</button>
-          <Link className="btn ghost" to="/jobs">کاریابی</Link>
+        <div className="filters pad">
+          <button className={tab === 'following' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
+          <button className={tab === 'suggested' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('suggested')}>برای شما</button>
+          <Link className="filter-chip" to="/jobs">کاریابی</Link>
         </div>
-        <div className="pad stack">
-          {loading && <Skel />}
-          {error && <div className="error">{error}</div>}
-          {!loading && posts.length === 0 && <Empty title="هنوز پستی نیست" text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را بنویسید." />}
-          {posts.map((post) => (
-            <PostCard key={post.id} post={post} onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))} />
-          ))}
-        </div>
+        {loading && <Skel />}
+        {error && <div className="banner banner-danger">{error}</div>}
+        {!loading && posts.length === 0 && <Empty title="هنوز پستی نیست" text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را بنویسید." />}
+        {posts.map((post) => (
+          <PostCard key={post.id} post={post} onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))} />
+        ))}
       </div>
       {active && (
-        <div className="viewer">
-          <div className="progress"><span /></div>
-          <div className="row" style={{ padding: '0 16px' }}>
-            <b>{active.author.name}</b>
-            <button className="text-btn" type="button" onClick={() => setActive(null)}>بستن</button>
-          </div>
-          <img src={active.media_url} alt="" />
+        <div className="story-viewer is-open">
+          <div className="progress"><span className="active"><i /></span></div>
+          <div className="who"><b>{active.author.name}</b><button className="icon-btn" type="button" onClick={() => setActive(null)} aria-label="بستن"><Icon name="back" /></button></div>
+          <div className="media"><img src={active.media_url} alt="" /></div>
         </div>
       )}
     </>

@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
 import { AuthProvider } from './auth'
 import App from './App'
+import './tebyar.css'
 import './index.css'
 
 const savedTheme = localStorage.getItem('tebyar_theme')

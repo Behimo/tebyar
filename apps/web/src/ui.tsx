@@ -1,27 +1,40 @@
 import { useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
-import { motion } from 'motion/react'
 import { api, when } from './api'
 import type { Post, UserCard } from './types'
+import { Brand, Icon } from './icons'
 
-export function Avatar({ user, large = false }: { user: Pick<UserCard, 'name' | 'avatar_url'>; large?: boolean }) {
-  const letter = user.name.trim().charAt(0) || 'ط'
-  return (
-    <span className={large ? 'avatar lg' : 'avatar'}>
-      {user.avatar_url ? <img src={user.avatar_url} alt="" /> : letter}
-    </span>
-  )
+const fa = new Intl.NumberFormat('fa-IR')
+
+const covers: Record<string, string> = {
+  'sara-karimi': '/design/photo-courtyard.jpg',
+  'mohammad-rezaei': '/design/photo-courtyard.jpg',
+  'ali-ahmadi': '/design/story-mohammad.jpg',
+  niloufar: '/design/story-niloufar.jpg',
+}
+
+const portraits: Record<string, string> = {
+  'sara-karimi': '/design/avatar-sara.png',
+  'mohammad-rezaei': '/design/avatar-mohammad.png',
+  'ali-ahmadi': '/design/avatar-navid.png',
+  niloufar: '/design/avatar-pouria.png',
+  kasra: '/design/avatar-kaveh.png',
+}
+
+export function Avatar({ user, large = false }: { user: Pick<UserCard, 'name' | 'avatar_url' | 'slug'>; large?: boolean }) {
+  const src = user.avatar_url || (user.slug ? portraits[user.slug] : undefined)
+  if (src) return <img className={large ? 'avatar lg' : 'avatar'} src={src} alt="" />
+  return <span className={large ? 'avatar lg' : 'avatar'} style={{ display: 'grid', placeItems: 'center', fontWeight: 700 }}>{user.name.trim().charAt(0)}</span>
 }
 
 export function Badges({ user }: { user: UserCard }) {
-  return (
-    <span className="chips">
-      {user.badges.education && <span className="chip">هویت تحصیلی</span>}
-      {user.badges.identity && <span className="chip blue">هویت</span>}
-      {user.badges.license && <span className="chip">پروانه</span>}
-      {user.badges.specialty && <span className="chip coral">تخصص</span>}
-    </span>
-  )
+  if (user.badges.education && !user.badges.license) {
+    return <span className="chips"><span className="chip chip-violet"><Icon name="check" /> هویت تحصیلی</span></span>
+  }
+  if (user.badges.identity || user.badges.license) {
+    return <span className="chips"><span className="chip chip-teal"><Icon name="check" /> هویت تأییدشده</span></span>
+  }
+  return null
 }
 
 export function Person({ user }: { user: UserCard }) {
@@ -38,12 +51,12 @@ export function Person({ user }: { user: UserCard }) {
   return <Link to={user.is_self ? '/profile' : `/doctors/${user.slug}`}>{body}</Link>
 }
 
-export function Top({ title, back = false, action }: { title: string; back?: boolean; action?: ReactNode }) {
+export function Top({ title, back = false, action, brand = false }: { title: string; back?: boolean; action?: ReactNode; brand?: boolean }) {
   return (
     <header className="topbar">
-      {back ? <button className="icon-btn" type="button" onClick={() => history.back()} aria-label="بازگشت">‹</button> : <span className="icon-btn" />}
-      <h1 className="page-title">{title}</h1>
-      {action ?? <span className="icon-btn" />}
+      {back ? <button className="icon-btn" type="button" onClick={() => history.back()} aria-label="بازگشت"><Icon name="back" /></button> : brand ? <Brand /> : <span />}
+      {!brand && <h1 className="page-title">{title}</h1>}
+      <div className="topbar-actions">{action}</div>
     </header>
   )
 }
@@ -68,55 +81,44 @@ export function Skel() {
 }
 
 export function PostCard({ post, onChange }: { post: Post; onChange: (post: Post) => void }) {
-  const [pop, setPop] = useState(false)
+  const [saved, setSaved] = useState(post.bookmarked)
+  const photo = post.media[0]?.url || (post.is_demo ? covers[post.author.slug || ''] : undefined)
   const toggle = async () => {
-    const path = `/posts/${post.id}/reactions`
-    const next = await api<{ data: Post }>(path, { method: post.reacted ? 'DELETE' : 'POST' })
-    if (!post.reacted) {
-      setPop(true)
-      window.setTimeout(() => setPop(false), 350)
-    }
+    const next = await api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' })
     onChange(next.data)
   }
 
   return (
-    <article className="card stack rise">
-      <Person user={post.author} />
-      {post.body && <p style={{ lineHeight: 1.8, whiteSpace: 'pre-wrap' }}>{post.body}</p>}
-      {post.repost_of && (
-        <Link to={`/posts/${post.repost_of.id}`} className="link-card">
-          <b>{post.repost_of.author.name}</b>
-          <p className="muted">{post.repost_of.body}</p>
+    <article className="card">
+      <div className="post-head">
+        <Avatar user={post.author} />
+        <div className="meta">
+          <div className="name">{post.author.name}</div>
+          <div className="spec">{post.author.specialty_title || post.author.role_label}</div>
+          <div className="chips"><Badges user={post.author} /></div>
+        </div>
+        <span className="overflow" aria-hidden="true"><Icon name="more" /></span>
+      </div>
+      {photo && (
+        <Link className="post-photo" to={`/posts/${post.id}`}>
+          {post.media[0]?.kind === 'video' ? <video src={photo} /> : <img src={photo} alt="" />}
         </Link>
       )}
-      {post.media.map((media) => (
-        <div className="media" key={media.url}>
-          {media.kind === 'video' ? <video src={media.url} controls /> : <img src={media.url} alt="" />}
+      {post.body && <p className="post-caption">{post.body}</p>}
+      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}: {post.repost_of.body}</p>}
+      {post.link_url && <p className="post-caption"><a href={post.link_url}>{post.link_title || post.link_url}</a></p>}
+      <div className="actions">
+        <button className="bookmark" type="button" aria-pressed={saved} aria-label="ذخیره" onClick={() => {
+          setSaved(!saved)
+          void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
+        }}><Icon name="bookmark" /></button>
+        <div className="reactions">
+          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" /> {fa.format(post.reactions_count)}</button>
+          <Link className="react comment" to={`/posts/${post.id}`}><Icon name="comment" /> {fa.format(post.comments_count)}</Link>
+          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="share" /> {fa.format(post.reposts_count)}</button>
         </div>
-      ))}
-      {post.link_url && (
-        <a className="link-card" href={post.link_url} target="_blank" rel="noreferrer">
-          <b>{post.link_title || post.link_url}</b>
-        </a>
-      )}
-      {post.hashtags.length > 0 && (
-        <div className="chips">{post.hashtags.map((tag) => <span className="chip plain" key={tag}>#{tag}</span>)}</div>
-      )}
-      <div className="row between">
-        <div className="actions">
-          <motion.button type="button" className={post.reacted ? `on ${pop ? 'pop' : ''}` : ''} onClick={() => void toggle()} whileTap={{ scale: 0.9 }}>
-            ❤ {post.reactions_count}
-          </motion.button>
-          <Link to={`/posts/${post.id}`}>💬 {post.comments_count}</Link>
-          <button type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}>
-            ↻ {post.reposts_count}
-          </button>
-          <button type="button" onClick={() => void api(`/posts/${post.id}/bookmark`, { method: post.bookmarked ? 'DELETE' : 'POST' })}>
-            {post.bookmarked ? '✓' : '☆'}
-          </button>
-        </div>
-        <span className="faint">{when(post.created_at)}</span>
       </div>
+      <p className="muted" style={{ padding: '0 14px 4px', fontSize: 12 }}>{when(post.created_at)}</p>
     </article>
   )
 }

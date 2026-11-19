@@ -4,6 +4,7 @@ import { api } from '../api'
 import { useAuth } from '../auth'
 import type { Me, Notice, UserCard, Vacancy } from '../types'
 import { Empty, Person, Top, errText } from '../ui'
+import { Brand } from '../icons'
 
 const roles = [
   ['student', 'دانشجو'],
@@ -20,11 +21,15 @@ export function Login() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   return (
-    <div className="screen-body pad stack" style={{ justifyContent: 'center' }}>
-      <p className="faint">TEBYAR</p>
-      <h1 className="hero">طبیار؛ جایی برای ارتباط، یادگیری و رشد حرفه‌ای پزشکان</h1>
-      <p className="lead">شبکه اجتماعی پزشکان، رزیدنت‌ها و دانشجویان پزشکی. ورود با شماره موبایل.</p>
-      <form className="stack" onSubmit={(event) => {
+    <>
+      <header className="topbar"><span /><Brand /><span /></header>
+      <div className="screen-body pad">
+      <div className="auth-hero">
+        <h1>ورود پزشکان</h1>
+        <p className="lead">طبیار شبکهٔ پزشکان، رزیدنت‌ها و دانشجویان پزشکی است. پزشکان با شماره نظام پزشکی تأیید می‌شوند.</p>
+      </div>
+      <div className="banner banner-warn">در حالت آزمایشی پیامک واقعی ارسال نمی‌شود و کد روی صفحهٔ بعد نشان داده می‌شود.</div>
+      <form onSubmit={(event) => {
         event.preventDefault()
         setBusy(true)
         void api<{ debug_code?: string }>('/auth/otp', { method: 'POST', body: JSON.stringify({ phone }) })
@@ -36,12 +41,16 @@ export function Login() {
           .catch((reason) => setError(errText(reason)))
           .finally(() => setBusy(false))
       }}>
-        <input className="field ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="0912xxxxxxx" required />
-        {error && <div className="error">{error}</div>}
-        <button className="btn primary full" disabled={busy} type="submit">دریافت کد</button>
+        <div className="field">
+          <label>شماره موبایل</label>
+          <input className="input ltr" inputMode="tel" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="09120000000" required />
+        </div>
+        {error && <p className="field-error" style={{ display: 'block' }}>{error}</p>}
+        <button className="btn btn-primary btn-block" disabled={busy} type="submit">دریافت کد</button>
       </form>
-      <button className="btn ghost" type="button" onClick={() => { sessionStorage.setItem('tebyar_intent', 'employer'); }}>مرکز درمانی هستید؟ بعد از کد، نقش کارفرما را انتخاب کنید.</button>
-    </div>
+      <p className="center muted" style={{ marginTop: 16, fontSize: 13 }}>مرکز درمانی هستید؟ بعد از دریافت کد، نقش کارفرما را انتخاب کنید.</p>
+      </div>
+    </>
   )
 }
 
