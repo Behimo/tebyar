@@ -15,14 +15,21 @@ const paths: Record<string, ReactNode> = {
   share: <><path d="M14 7h5v5" /><path d="M19 7 11 15" /><path d="M19 13v5a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V8a1 1 0 0 1 1-1h5" /></>,
   bookmark: <path d="M7 4h10a1 1 0 0 1 1 1v15l-6-3.5L6 20V5a1 1 0 0 1 1-1z" />,
   check: <path d="m5 12 5 5 9-9" />,
+  send: <path d="m4 12 16-8-4-5v6z" />,
+  file: <><path d="M14 4h4v16H6V8h8z" /><path d="M14 4v4h4" /></>,
+  edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,
+  settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M4.9 6.5 6.3 7.9M17.7 16.1 19.1 17.5M3 12h2M19 12h2M4.9 17.5 6.3 16.1M17.7 7.9 19.1 6.5" /></>,
+  camera: <><path d="M4 8h4l2-2h4l2 2h4v12H4z" /><circle cx="12" cy="13" r="3.2" /></>,
+  link: <><path d="M10 13a4 4 0 0 0 5.7.3l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.2 1.2" /><path d="M14 11a4 4 0 0 0-5.7-.3L5.8 13.2a4 4 0 0 0 5.7 5.7l1.2-1.2" /></>,
 }
 
-const filled = new Set(['heart', 'comment', 'bookmark', 'more'])
+const filled = new Set(['more'])
 
-export function Icon({ name }: { name: keyof typeof paths | string }) {
+export function Icon({ name, solid = false }: { name: keyof typeof paths | string; solid?: boolean }) {
   const body = paths[name]
+  const useFill = solid || filled.has(name)
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill={filled.has(name) ? 'currentColor' : 'none'} stroke={filled.has(name) ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2 : 1.75} strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill={useFill ? 'currentColor' : 'none'} stroke={useFill ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2 : 1.75} strokeLinecap="round" strokeLinejoin="round">
       {body}
     </svg>
   )

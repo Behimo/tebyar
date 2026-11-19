@@ -13,33 +13,70 @@ const sampleStories = [
   { name: 'کسری', src: '/design/story-kasra.jpg' },
 ]
 
+const feedMemory: { suggested?: Post[]; following?: Post[]; stories?: Story[] } = {}
+
+function readPosts(tab: 'suggested' | 'following'): Post[] | null {
+  if (feedMemory[tab]) return feedMemory[tab]
+  try {
+    const raw = sessionStorage.getItem(`tebyar-feed-${tab}`)
+    if (!raw) return null
+    const posts = JSON.parse(raw) as Post[]
+    feedMemory[tab] = posts
+    return posts
+  } catch {
+    return null
+  }
+}
+
+function writePosts(tab: 'suggested' | 'following', posts: Post[]) {
+  feedMemory[tab] = posts
+  sessionStorage.setItem(`tebyar-feed-${tab}`, JSON.stringify(posts))
+}
+
 export function Home() {
   const [tab, setTab] = useState<'suggested' | 'following'>('suggested')
-  const [posts, setPosts] = useState<Post[]>([])
-  const [stories, setStories] = useState<Story[]>([])
-  const [loading, setLoading] = useState(true)
+  const [posts, setPosts] = useState<Post[]>(() => readPosts('suggested') ?? [])
+  const [stories, setStories] = useState<Story[]>(() => feedMemory.stories ?? [])
+  const [loading, setLoading] = useState(() => readPosts('suggested') == null)
+  const [fresh, setFresh] = useState(false)
   const [error, setError] = useState('')
   const [active, setActive] = useState<Story | null>(null)
   const { user } = useAuth()
 
   useEffect(() => {
     let gone = false
-    setLoading(true)
-    Promise.all([
-      api<{ data: Post[] }>(`/feed?tab=${tab}`),
-      api<{ data: Story[] }>('/stories'),
-    ]).then(([feed, storyList]) => {
+    const cached = readPosts(tab)
+    if (cached) {
+      setPosts(cached)
+      setLoading(false)
+      setFresh(false)
+    } else {
+      setPosts([])
+      setLoading(true)
+      setFresh(true)
+    }
+    api<{ data: Post[] }>(`/feed?tab=${tab}`).then((feed) => {
       if (gone) return
       setPosts(feed.data)
-      setStories(storyList.data)
+      writePosts(tab, feed.data)
       setError('')
     }).catch((reason) => {
-      if (!gone) setError(errText(reason))
+      if (!gone && !cached) setError(errText(reason))
     }).finally(() => {
       if (!gone) setLoading(false)
     })
     return () => { gone = true }
   }, [tab])
+
+  useEffect(() => {
+    let gone = false
+    api<{ data: Story[] }>('/stories').then((storyList) => {
+      if (gone) return
+      feedMemory.stories = storyList.data
+      setStories(storyList.data)
+    }).catch(() => undefined)
+    return () => { gone = true }
+  }, [])
 
   const publishStory = async (file: File) => {
     const body = new FormData()
@@ -66,14 +103,15 @@ export function Home() {
       <div className="screen-body">
         <div className="stories" dir="rtl" aria-label="استوری‌ها">
           <label className="story story-own">
-            <span className="story-tile"><span className="plus">+</span><span className="own-label">استوری شما</span></span>
+            <span className="story-tile"><span className="plus">+</span></span>
+            <span className="story-name">استوری شما</span>
             <input hidden type="file" accept="image/*" onChange={(event) => {
               const file = event.target.files?.[0]
               if (file) void publishStory(file)
             }} />
           </label>
           {tiles.filter((story) => story.live?.author.id !== user?.id).map((story) => (
-            <button key={story.id} className="story has-ring" type="button" onClick={() => {
+            <button key={story.id} className="story" type="button" onClick={() => {
               if (story.live) {
                 setActive(story.live)
                 void api(`/stories/${story.live.id}/view`, { method: 'POST' })
@@ -81,21 +119,24 @@ export function Home() {
                 setActive({ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] })
               }
             }}>
-              <span className="story-tile"><img src={story.src} alt="" /><span className="caption">{story.name}</span></span>
+              <span className="story-tile"><img src={story.src} alt="" /></span>
+              <span className="story-name">{story.name}</span>
             </button>
           ))}
         </div>
-        <div className="filters pad">
-          <button className={tab === 'following' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
-          <button className={tab === 'suggested' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('suggested')}>برای شما</button>
-          <Link className="filter-chip" to="/jobs">کاریابی</Link>
+        <div className="home-tabs">
+          <button className={tab === 'suggested' ? 'is-on' : ''} type="button" onClick={() => setTab('suggested')}>برای شما</button>
+          <button className={tab === 'following' ? 'is-on' : ''} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
+          <Link to="/jobs">کاریابی</Link>
         </div>
-        {loading && <Skel />}
+        {loading && posts.length === 0 && <Skel />}
         {error && <div className="banner banner-danger">{error}</div>}
         {!loading && posts.length === 0 && <Empty title="هنوز پستی نیست" text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را بنویسید." />}
-        {posts.map((post) => (
-          <PostCard key={post.id} post={post} onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))} />
-        ))}
+        <div className={fresh ? 'feed-in' : undefined}>
+          {posts.map((post) => (
+            <PostCard key={post.id} post={post} onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))} />
+          ))}
+        </div>
       </div>
       {active && (
         <div className="story-viewer is-open">

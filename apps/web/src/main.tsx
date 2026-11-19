@@ -8,7 +8,7 @@ import './tebyar.css'
 import './index.css'
 
 const savedTheme = localStorage.getItem('tebyar_theme')
-if (savedTheme === 'dark') document.documentElement.dataset.theme = 'dark'
+document.documentElement.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light'
 
 if (Capacitor.isNativePlatform()) {
   void import('@capacitor/push-notifications').then(async ({ PushNotifications }) => {

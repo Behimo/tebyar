@@ -31,19 +31,18 @@ class SocialController extends Controller
 
         if ($tab === 'following') {
             $ids = $viewer->following()->pluck('users.id')->push($viewer->id);
-            $query->whereIn('user_id', $ids);
+            $query->whereIn('posts.user_id', $ids);
         } elseif ($viewer->specialty_title) {
-            $specialty = $viewer->specialty_title;
-            $query->orderByRaw(
-                'case when exists (select 1 from users where users.id = posts.user_id and users.specialty_title = ?) then 0 else 1 end',
-                [$specialty],
-            );
+            $query->leftJoin('users as feed_authors', 'feed_authors.id', '=', 'posts.user_id')
+                ->select('posts.*')
+                ->orderByRaw('case when feed_authors.specialty_title = ? then 0 else 1 end', [$viewer->specialty_title]);
         }
 
         $posts = $query->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])
-            ->latest()
-            ->paginate(15);
+            ->withViewerState($viewer)
+            ->latest('posts.created_at')
+            ->paginate(12);
 
         return response()->json([
             'data' => $posts->getCollection()->map(fn (Post $post) => Present::post($post, $viewer))->values(),
@@ -207,10 +206,11 @@ class SocialController extends Controller
     {
         $viewer = $request->user();
         $posts = Post::query()->visible()
-            ->whereIn('id', Bookmark::query()->where('user_id', $viewer->id)->pluck('post_id'))
+            ->whereIn('posts.id', Bookmark::query()->where('user_id', $viewer->id)->pluck('post_id'))
             ->with(['author', 'media', 'hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])
-            ->latest()
+            ->withViewerState($viewer)
+            ->latest('posts.created_at')
             ->get();
 
         return response()->json(['data' => $posts->map(fn (Post $post) => Present::post($post, $viewer))->values()]);
@@ -219,11 +219,14 @@ class SocialController extends Controller
     public function stories(Request $request): JsonResponse
     {
         $viewer = $request->user();
+        $hidden = Present::hiddenIds($viewer);
         $stories = Story::query()
             ->where('expires_at', '>', now())
-            ->when(Present::hiddenIds($viewer) !== [], fn ($query) => $query->whereNotIn('user_id', Present::hiddenIds($viewer)))
+            ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_id', $hidden))
             ->with('author')
+            ->withExists(['views as seen' => fn ($query) => $query->where('user_id', $viewer->id)])
             ->latest()
+            ->limit(24)
             ->get();
 
         return response()->json(['data' => $stories->map(fn (Story $story) => Present::story($story, $viewer))->values()]);

@@ -42,7 +42,7 @@ function Shell() {
   return (
     <div className="app-root">
       <div className="app-column">
-        <div className="screen is-active">
+        <div key={location.pathname} className="screen is-active page-swap" data-tabbar={showTabs ? 'on' : 'off'}>
           <Outlet />
         </div>
         {showTabs && (

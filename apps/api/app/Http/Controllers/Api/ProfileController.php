@@ -77,9 +77,15 @@ class ProfileController extends Controller
             'organization_name' => ['nullable', 'string', 'max:160'],
             'organization_type' => ['nullable', Rule::in(['clinic', 'hospital', 'teaching'])],
             'about' => ['nullable', 'string', 'max:2000'],
-            'document' => ['required', 'file', 'mimes:jpg,jpeg,png,pdf,webp', 'max:8192'],
+            'document' => [
+                Rule::requiredIf(fn () => $request->input('role') === 'employer'),
+                'nullable',
+                'file',
+                'mimes:jpg,jpeg,png,pdf,webp',
+                'max:8192',
+            ],
         ], [
-            'document.required' => 'مدرک را بارگذاری کنید.',
+            'document.required' => 'مدرک مرکز درمانی را بارگذاری کنید.',
         ]);
 
         if (! empty($data['national_id'])) {
@@ -90,8 +96,8 @@ class ProfileController extends Controller
             $data['national_id'] = $nationalId;
         }
 
-        if (in_array($data['role'], Membership::LEARNERS, true) && empty($data['university'])) {
-            throw ValidationException::withMessages(['university' => 'نام دانشگاه را وارد کنید.']);
+        if (in_array($data['role'], Membership::LEARNERS, true) && empty($data['student_number'])) {
+            throw ValidationException::withMessages(['student_number' => 'شماره دانشجویی الزامی است.']);
         }
 
         if (in_array($data['role'], Membership::LICENSED, true) && empty($data['medical_council_number'])) {
@@ -140,7 +146,7 @@ class ProfileController extends Controller
 
         return response()->json([
             'data' => Present::user($user, $request->user(), true),
-            'posts' => $user->posts()->visible()->with(['author', 'media', 'hashtags'])->withCount(['reactions', 'comments', 'reposts'])->latest()->limit(20)->get()
+            'posts' => $user->posts()->visible()->with(['author', 'media', 'hashtags'])->withCount(['reactions', 'comments', 'reposts'])->withViewerState($request->user())->latest('posts.created_at')->limit(12)->get()
                 ->map(fn ($post) => Present::post($post, $request->user()))
                 ->values(),
         ]);

@@ -61,6 +61,21 @@ export function Top({ title, back = false, action, brand = false }: { title: str
   )
 }
 
+export function Toggle({ on, onChange, label }: { on: boolean; onChange: (next: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      className={on ? 'toggle on' : 'toggle'}
+      role="switch"
+      aria-checked={on}
+      aria-label={label}
+      onClick={() => onChange(!on)}
+    >
+      <i />
+    </button>
+  )
+}
+
 export function Empty({ title, text }: { title: string; text: string }) {
   return (
     <div className="empty">
@@ -72,15 +87,31 @@ export function Empty({ title, text }: { title: string; text: string }) {
 
 export function Skel() {
   return (
-    <div className="pad stack">
-      <div className="skel" style={{ height: 88 }} />
-      <div className="skel" style={{ height: 160 }} />
-      <div className="skel" style={{ height: 160 }} />
+    <div className="feed-skel" aria-busy="true" aria-label="در حال بارگذاری">
+      {[0, 1].map((item) => (
+        <article key={item} className="skel-card">
+          <div className="post-head">
+            <span className="skel skel-avatar" />
+            <div className="meta">
+              <span className="skel skel-line" style={{ width: '38%' }} />
+              <span className="skel skel-line" style={{ width: '22%', marginTop: 8 }} />
+            </div>
+          </div>
+          <div className="skel skel-photo" />
+          <div className="skel-actions">
+            <span className="skel skel-dot" />
+            <span className="skel skel-dot" />
+            <span className="skel skel-dot" />
+          </div>
+          <span className="skel skel-line" style={{ width: '78%' }} />
+          <span className="skel skel-line" style={{ width: '46%' }} />
+        </article>
+      ))}
     </div>
   )
 }
 
-export function PostCard({ post, onChange }: { post: Post; onChange: (post: Post) => void }) {
+export function PostCard({ post, onChange, flush = false }: { post: Post; onChange: (post: Post) => void; flush?: boolean }) {
   const [saved, setSaved] = useState(post.bookmarked)
   const photo = post.media[0]?.url || (post.is_demo ? covers[post.author.slug || ''] : undefined)
   const toggle = async () => {
@@ -88,37 +119,49 @@ export function PostCard({ post, onChange }: { post: Post; onChange: (post: Post
     onChange(next.data)
   }
 
+  const media = photo ? (
+    <Link className="post-photo" to={`/posts/${post.id}`}>
+      {post.media[0]?.kind === 'video' ? <video src={photo} /> : <img src={photo} alt="" />}
+    </Link>
+  ) : null
+
+  if (flush) {
+    return (
+      <article className="card post-card flush">
+        {media}
+        {post.body && <p className="post-caption">{post.body}</p>}
+      </article>
+    )
+  }
+
   return (
-    <article className="card">
+    <article className="card post-card">
       <div className="post-head">
         <Avatar user={post.author} />
         <div className="meta">
-          <div className="name">{post.author.name}</div>
+          <div className="name-row">
+            <span className="name">{post.author.name}</span>
+            <Badges user={post.author} />
+          </div>
           <div className="spec">{post.author.specialty_title || post.author.role_label}</div>
-          <div className="chips"><Badges user={post.author} /></div>
         </div>
-        <span className="overflow" aria-hidden="true"><Icon name="more" /></span>
       </div>
-      {photo && (
-        <Link className="post-photo" to={`/posts/${post.id}`}>
-          {post.media[0]?.kind === 'video' ? <video src={photo} /> : <img src={photo} alt="" />}
-        </Link>
-      )}
-      {post.body && <p className="post-caption">{post.body}</p>}
-      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}: {post.repost_of.body}</p>}
-      {post.link_url && <p className="post-caption"><a href={post.link_url}>{post.link_title || post.link_url}</a></p>}
+      {media}
       <div className="actions">
         <button className="bookmark" type="button" aria-pressed={saved} aria-label="ذخیره" onClick={() => {
           setSaved(!saved)
           void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
-        }}><Icon name="bookmark" /></button>
+        }}><Icon name="bookmark" solid={saved} /></button>
         <div className="reactions">
-          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" /> {fa.format(post.reactions_count)}</button>
-          <Link className="react comment" to={`/posts/${post.id}`}><Icon name="comment" /> {fa.format(post.comments_count)}</Link>
-          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="share" /> {fa.format(post.reposts_count)}</button>
+          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" solid={post.reacted} /> {post.reactions_count > 0 ? fa.format(post.reactions_count) : ''}</button>
+          <Link className="react comment" to={`/posts/${post.id}`}><Icon name="comment" /> {post.comments_count > 0 ? fa.format(post.comments_count) : ''}</Link>
+          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="share" /> {post.reposts_count > 0 ? fa.format(post.reposts_count) : ''}</button>
         </div>
       </div>
-      <p className="muted" style={{ padding: '0 14px 4px', fontSize: 12 }}>{when(post.created_at)}</p>
+      {post.body && <p className="post-caption">{post.body}</p>}
+      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}: {post.repost_of.body}</p>}
+      {post.link_url && <a className="post-link" href={post.link_url}>{post.link_title || post.link_url}</a>}
+      {post.created_at && <p className="post-time">{when(post.created_at)}</p>}
     </article>
   )
 }

@@ -37,10 +37,10 @@ class Present
                 'license' => (bool) $user->license_verified_at,
                 'specialty' => (bool) $user->specialty_verified_at,
             ],
-            'followers_count' => $user->followers_count ?? $user->followers()->count(),
-            'following_count' => $user->following_count ?? $user->following()->count(),
-            'posts_count' => $user->posts_count ?? $user->posts()->visible()->count(),
-            'is_following' => $viewer ? $viewer->following()->where('users.id', $user->id)->exists() : false,
+            'followers_count' => $detail ? ($user->followers_count ?? $user->followers()->count()) : 0,
+            'following_count' => $detail ? ($user->following_count ?? $user->following()->count()) : 0,
+            'posts_count' => $detail ? ($user->posts_count ?? $user->posts()->visible()->count()) : 0,
+            'is_following' => $detail && $viewer ? $viewer->following()->where('users.id', $user->id)->exists() : false,
             'is_self' => $viewer?->id === $user->id,
             'is_demo' => (bool) $user->is_demo,
             'anonymous' => false,
@@ -138,8 +138,12 @@ class Present
             'reactions_count' => $post->reactions_count ?? $post->reactions()->count(),
             'comments_count' => $post->comments_count ?? $post->comments()->whereNull('hidden_at')->count(),
             'reposts_count' => $post->reposts_count ?? $post->reposts()->visible()->count(),
-            'reacted' => $post->reactions()->where('user_id', $viewer->id)->exists(),
-            'bookmarked' => $post->bookmarks()->where('user_id', $viewer->id)->exists(),
+            'reacted' => $post->offsetExists('reacted')
+                ? (bool) $post->getAttribute('reacted')
+                : $post->reactions()->where('user_id', $viewer->id)->exists(),
+            'bookmarked' => $post->offsetExists('bookmarked')
+                ? (bool) $post->getAttribute('bookmarked')
+                : $post->bookmarks()->where('user_id', $viewer->id)->exists(),
             'is_demo' => (bool) $post->is_demo,
             'created_at' => $post->created_at?->toIso8601String(),
             'author' => self::user($post->author, $viewer),
@@ -184,7 +188,9 @@ class Present
             'id' => $story->id,
             'media_url' => self::publicUrl($story->path),
             'expires_at' => $story->expires_at?->toIso8601String(),
-            'seen' => $story->views()->where('user_id', $viewer->id)->exists(),
+            'seen' => $story->offsetExists('seen')
+                ? (bool) $story->getAttribute('seen')
+                : $story->views()->where('user_id', $viewer->id)->exists(),
             'mine' => $story->user_id === $viewer->id,
             'author' => self::user($story->author, $viewer),
         ];
@@ -302,9 +308,16 @@ class Present
         ];
     }
 
+    /** @var array<int, array<int, int>> */
+    private static array $hiddenCache = [];
+
     public static function hiddenIds(User $viewer): array
     {
-        return Block::query()
+        if (isset(self::$hiddenCache[$viewer->id])) {
+            return self::$hiddenCache[$viewer->id];
+        }
+
+        return self::$hiddenCache[$viewer->id] = Block::query()
             ->where('blocker_id', $viewer->id)
             ->orWhere('blocked_id', $viewer->id)
             ->get(['blocker_id', 'blocked_id'])

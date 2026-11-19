@@ -64,6 +64,14 @@ class Post extends Model
 
     public function scopeVisible($query)
     {
-        return $query->whereNull('hidden_at')->whereNull('removed_at');
+        return $query->whereNull('posts.hidden_at')->whereNull('posts.removed_at');
+    }
+
+    public function scopeWithViewerState($query, User $viewer)
+    {
+        return $query->withExists([
+            'reactions as reacted' => fn ($inner) => $inner->where('user_id', $viewer->id),
+            'bookmarks as bookmarked' => fn ($inner) => $inner->where('user_id', $viewer->id),
+        ]);
     }
 }

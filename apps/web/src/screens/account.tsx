@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api } from '../api'
 import { useAuth } from '../auth'
 import type { Me, Notice, UserCard, Vacancy } from '../types'
-import { Empty, Person, Top, errText } from '../ui'
+import { Empty, Person, Top, Toggle, errText } from '../ui'
 import { Brand } from '../icons'
 
 const roles = [
@@ -79,10 +79,13 @@ export function Otp() {
           .catch((reason) => setError(errText(reason)))
       }}>
         <p className="lead">کد پنج‌رقمی به {phone} ارسال شد.</p>
-        {debug && <div className="banner calm">حالت آزمایشی: کد {debug}</div>}
-        <input className="field ltr" value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" placeholder="کد تأیید" required />
-        {error && <div className="error">{error}</div>}
-        <button className="btn primary full" type="submit">ورود</button>
+        {debug && <div className="banner banner-info">حالت آزمایشی: کد {debug}</div>}
+        <div className="field">
+          <label htmlFor="otp-code">کد تأیید</label>
+          <input id="otp-code" className="input ltr" value={code} onChange={(event) => setCode(event.target.value)} inputMode="numeric" placeholder="12345" required />
+        </div>
+        {error && <p className="field-error" style={{ display: 'block' }}>{error}</p>}
+        <button className="btn btn-primary btn-block" type="submit">ورود</button>
       </form>
     </>
   )
@@ -108,41 +111,40 @@ export function Join() {
           .then(() => navigate('/pending'))
           .catch((reason) => setError(errText(reason)))
       }}>
-        <p className="lead">دانشجو و اینترن با کارت دانشجویی وارد می‌شوند. رزیدنت، پزشک عمومی و متخصص باید شماره نظام پزشکی داشته باشند. نشان‌ها جداگانه تأیید می‌شوند.</p>
+        <p className="lead">برای دانشجو و اینترن فقط شماره دانشجویی لازم است. برای رزیدنت و پزشک فقط شماره نظام پزشکی. ادمین هویت را بررسی می‌کند.</p>
         <div className="role-grid">
           {roles.map(([value, label]) => (
             <button key={value} type="button" className={role === value ? 'on' : ''} onClick={() => setRole(value)}>{label}</button>
           ))}
         </div>
-        <input className="field" name="name" defaultValue={user?.name || ''} placeholder="نام و نام خانوادگی" required />
-        <input className="field" name="city" placeholder="شهر" required={role === 'employer'} />
+        <input className="input" name="name" defaultValue={user?.name || ''} placeholder="نام و نام خانوادگی" required />
         {learner && (
-          <>
-            <input className="field" name="university" placeholder="دانشگاه" required />
-            <input className="field" name="student_number" placeholder="شماره دانشجویی" />
-          </>
+          <div className="field">
+            <label>شماره دانشجویی</label>
+            <input className="input ltr" name="student_number" inputMode="numeric" placeholder="مثلاً ۴۰۱۲۳۴۵۶۷" required />
+          </div>
         )}
         {licensed && (
-          <>
-            <input className="field" name="specialty_title" placeholder="تخصص یا عنوان" />
-            <input className="field" name="medical_council_number" placeholder="شماره نظام پزشکی" required />
-            <input className="field" name="national_id" placeholder="کد ملی، فقط برای پرونده خصوصی" />
-          </>
+          <div className="field">
+            <label>شماره نظام پزشکی</label>
+            <input className="input ltr" name="medical_council_number" inputMode="numeric" placeholder="مثلاً ۱۲۳۴۵" required />
+          </div>
         )}
         {role === 'employer' && (
           <>
-            <input className="field" name="organization_name" placeholder="نام مرکز" required />
+            <input className="input" name="city" placeholder="شهر" required />
+            <input className="input" name="organization_name" placeholder="نام مرکز" required />
             <select className="select" name="organization_type" defaultValue="hospital">
               <option value="hospital">بیمارستان</option>
               <option value="clinic">کلینیک</option>
               <option value="teaching">مرکز آموزشی</option>
             </select>
-            <textarea className="area" name="about" placeholder="معرفی کوتاه مرکز" />
+            <textarea className="textarea" name="about" placeholder="معرفی کوتاه مرکز" />
+            <label className="label">مدرک مرکز<input className="input" name="document" type="file" accept="image/*,application/pdf" required /></label>
           </>
         )}
-        <label className="lbl">مدرک<input className="field" name="document" type="file" accept="image/*,application/pdf" required /></label>
         {error && <div className="error">{error}</div>}
-        <button className="btn primary full" type="submit">ارسال برای بررسی</button>
+        <button className="btn btn-primary btn-block" type="submit">ارسال برای بررسی</button>
       </form>
     </>
   )
@@ -155,15 +157,17 @@ export function Pending() {
     return () => window.clearInterval(timer)
   }, [refresh])
   return (
-    <div className="screen-body pad stack" style={{ justifyContent: 'center' }}>
-      <h1>وضعیت حساب</h1>
+    <>
+      <Top title="وضعیت حساب" />
+      <div className="screen-body pad stack auth-wait">
       <div className="card stack">
         <b>{user?.status_label}</b>
         <p className="lead">{user?.verification?.note || 'مدارک شما در صف بررسی ادمین است. تا تأیید، فید جامعه باز نمی‌شود.'}</p>
       </div>
-      {(user?.account_status === 'needs_correction' || !user?.role) && <Link className="btn primary" to="/join">اصلاح اطلاعات</Link>}
-      <button className="btn ghost" type="button" onClick={() => void logout()}>خروج</button>
+      {(user?.account_status === 'needs_correction' || !user?.role) && <Link className="btn btn-primary btn-block" to="/join">اصلاح اطلاعات</Link>}
+      <button className="btn btn-ghost btn-block" type="button" onClick={() => void logout()}>خروج</button>
     </div>
+    </>
   )
 }
 
@@ -177,12 +181,15 @@ export function Notifications() {
   return (
     <>
       <Top title="اعلان‌ها" back />
-      <div className="screen-body pad stack">
+      <div className="screen-body pad">
         {items.length === 0 && <Empty title="اعلانی نیست" text="تعامل‌ها، پیام‌ها و نتیجه احراز اینجا می‌آیند." />}
         {items.map((item) => (
-          <button key={item.id} className="card stack" type="button" onClick={() => item.href && navigate(item.href)}>
-            <b>{item.title}</b>
-            <span>{item.body}</span>
+          <button key={item.id} className="list-row" type="button" onClick={() => item.href && navigate(item.href)}>
+            <span className="avatar sm" style={{ display: 'grid', placeItems: 'center', fontWeight: 700, fontSize: 14 }}>{item.title.trim().charAt(0)}</span>
+            <div className="body">
+              <div className="title">{item.title}</div>
+              <div className="sub">{item.body}</div>
+            </div>
           </button>
         ))}
       </div>
@@ -195,71 +202,119 @@ export function Settings() {
   const [blocks, setBlocks] = useState<UserCard[]>([])
   const [tickets, setTickets] = useState<{ id: number; subject: string; status: string; messages: { body: string }[] }[]>([])
   const [message, setMessage] = useState('')
-  const theme = document.documentElement.dataset.theme === 'dark'
+  const [supportOpen, setSupportOpen] = useState(false)
+  const [dark, setDark] = useState(document.documentElement.dataset.theme === 'dark')
+  const [notifyInteractions, setNotifyInteractions] = useState(user?.notify_interactions ?? true)
+  const [notifyMessages, setNotifyMessages] = useState(user?.notify_messages ?? true)
+  const [privacyDm, setPrivacyDm] = useState(user?.privacy_dm ?? 'everyone')
+
+  const savePrivacy = (patch: Record<string, unknown>) => {
+    void api('/me', { method: 'PATCH', body: JSON.stringify(patch) }).then(() => refresh())
+  }
+
+  useEffect(() => {
+    if (!user) return
+    setNotifyInteractions(user.notify_interactions)
+    setNotifyMessages(user.notify_messages)
+    setPrivacyDm(user.privacy_dm)
+  }, [user])
+
   useEffect(() => {
     api<{ data: UserCard[] }>('/blocks').then((payload) => setBlocks(payload.data)).catch(() => undefined)
     api<{ data: { id: number; subject: string; status: string; messages: { body: string }[] }[] }>('/support-tickets')
       .then((payload) => setTickets(payload.data))
       .catch(() => undefined)
   }, [])
+
   if (!user) return null
   return (
     <>
       <Top title="تنظیمات" back />
-      <div className="screen-body pad stack">
-        <label className="check"><input type="checkbox" defaultChecked={theme} onChange={(event) => {
-          const next = event.target.checked ? 'dark' : 'light'
-          document.documentElement.dataset.theme = next === 'dark' ? 'dark' : ''
-          localStorage.setItem('tebyar_theme', next === 'dark' ? 'dark' : '')
-        }} /> حالت تاریک</label>
-        <form className="card stack" onSubmit={(event) => {
-          event.preventDefault()
-          const form = new FormData(event.currentTarget)
-          void api('/me', { method: 'PATCH', body: JSON.stringify({
-            privacy_dm: form.get('privacy_dm'),
-            notify_interactions: form.get('notify_interactions') === 'on',
-            notify_messages: form.get('notify_messages') === 'on',
-          }) }).then(() => refresh())
-        }}>
-          <label className="lbl">چه کسی می‌تواند پیام بدهد
-            <select className="select" name="privacy_dm" defaultValue={user.privacy_dm}>
+      <div className="screen-body pad settings-screen">
+        <h2 className="section-title section-title--tight">ظاهر</h2>
+        <div className="card pad-in settings-card">
+          <div className="kv">
+            <span className="k">حالت تیره / روشن</span>
+            <Toggle
+              label="تغییر تم"
+              on={dark}
+              onChange={(next) => {
+                setDark(next)
+                document.documentElement.dataset.theme = next ? 'dark' : 'light'
+                localStorage.setItem('tebyar_theme', next ? 'dark' : '')
+              }}
+            />
+          </div>
+        </div>
+
+        <h2 className="section-title section-title--tight">حریم خصوصی</h2>
+        <div className="card pad-in settings-card">
+          <div className="kv kv-stack">
+            <span className="k">چه کسی می‌تواند پیام بدهد</span>
+            <select
+              className="select"
+              value={privacyDm}
+              onChange={(event) => {
+                const value = event.target.value
+                setPrivacyDm(value)
+                savePrivacy({ privacy_dm: value })
+              }}
+            >
               <option value="everyone">همه اعضای تأییدشده</option>
-              <option value="following">فقط کسانی که دنبال می‌کنم</option>
+              <option value="following">فقط دنبال‌شوندگان</option>
               <option value="none">هیچ‌کس</option>
             </select>
-          </label>
-          <label className="check"><input name="notify_interactions" type="checkbox" defaultChecked={user.notify_interactions} /> اعلان تعامل‌ها</label>
-          <label className="check"><input name="notify_messages" type="checkbox" defaultChecked={user.notify_messages} /> اعلان پیام‌ها</label>
-          <button className="btn" type="submit">ذخیره حریم خصوصی</button>
-        </form>
-        <div className="card stack">
-          <b>مسدودشده‌ها</b>
-          {blocks.map((person) => person.id && (
-            <div key={person.id} className="row between">
-              <Person user={person} />
-              <button className="text-btn" type="button" onClick={() => void api(`/blocks/${person.id}`, { method: 'DELETE' }).then(() => setBlocks((list) => list.filter((item) => item.id !== person.id)))}>رفع</button>
-            </div>
-          ))}
+          </div>
+          <div className="kv">
+            <span className="k">اعلان تعامل‌ها</span>
+            <Toggle label="اعلان تعامل‌ها" on={notifyInteractions} onChange={(next) => { setNotifyInteractions(next); savePrivacy({ notify_interactions: next }) }} />
+          </div>
+          <div className="kv">
+            <span className="k">اعلان پیام‌ها</span>
+            <Toggle label="اعلان پیام‌ها" on={notifyMessages} onChange={(next) => { setNotifyMessages(next); savePrivacy({ notify_messages: next }) }} />
+          </div>
         </div>
-        <form className="card stack" onSubmit={(event) => {
-          event.preventDefault()
-          const form = Object.fromEntries(new FormData(event.currentTarget).entries())
-          void api('/support-tickets', { method: 'POST', body: JSON.stringify(form) }).then(() => setMessage('درخواست پشتیبانی ثبت شد.'))
-        }}>
-          <b>پشتیبانی</b>
-          <input className="field" name="subject" placeholder="موضوع" required />
-          <textarea className="area" name="body" placeholder="شرح" required />
-          <button className="btn" type="submit">ارسال</button>
-          {message && <div className="banner calm">{message}</div>}
+
+        <h2 className="section-title section-title--tight">حساب</h2>
+        <div className="card pad-in settings-card settings-account">
+          <Link className="list-row" to="/pending">
+            <div className="body"><div className="title">وضعیت احراز هویت</div><div className="sub">{user.status_label}</div></div>
+          </Link>
+          {blocks.length > 0 && (
+            <div className="settings-blocks">
+              <p className="muted" style={{ fontSize: 12, margin: '8px 0' }}>مسدودشده‌ها</p>
+              {blocks.map((person) => person.id && (
+                <div key={person.id} className="row between">
+                  <Person user={person} />
+                  <button className="text-btn" type="button" onClick={() => void api(`/blocks/${person.id}`, { method: 'DELETE' }).then(() => setBlocks((list) => list.filter((item) => item.id !== person.id)))}>رفع</button>
+                </div>
+              ))}
+            </div>
+          )}
+          <button className="list-row" type="button" onClick={() => setSupportOpen((value) => !value)}>
+            <div className="body"><div className="title">پشتیبانی</div><div className="sub">تیکت به تیم طبیار</div></div>
+          </button>
+          {supportOpen && (
+            <form className="stack" style={{ paddingTop: 8 }} onSubmit={(event) => {
+              event.preventDefault()
+              const form = Object.fromEntries(new FormData(event.currentTarget).entries())
+              void api('/support-tickets', { method: 'POST', body: JSON.stringify(form) }).then(() => setMessage('درخواست پشتیبانی ثبت شد.'))
+            }}>
+              <input className="input" name="subject" placeholder="موضوع" required />
+              <textarea className="textarea" name="body" placeholder="شرح" required />
+              <button className="btn btn-ghost btn-block" type="submit">ارسال</button>
+              {message && <div className="banner banner-success">{message}</div>}
+            </form>
+          )}
           {tickets.map((ticket) => (
-            <div key={ticket.id}>
-              <b>{ticket.subject}</b>
-              <div className="muted">{ticket.status}</div>
-              {ticket.messages.map((item, index) => <p key={index}>{item.body}</p>)}
+            <div key={ticket.id} className="muted" style={{ fontSize: 12, padding: '6px 0' }}>
+              <b>{ticket.subject}</b> — {ticket.status}
             </div>
           ))}
-        </form>
-        <button className="btn danger full" type="button" onClick={() => void logout()}>خروج</button>
+          <button className="list-row" type="button" onClick={() => void logout()}>
+            <div className="body"><div className="title">خروج</div><div className="sub">پایان نشست فعلی</div></div>
+          </button>
+        </div>
       </div>
     </>
   )
@@ -316,7 +371,7 @@ export function JobPage() {
         <h2>{job.title}</h2>
         <p className="muted">{job.organization.name} · {job.organization.type_label} · {job.city}</p>
         <span className="chip">{job.specialty}</span>
-        <span className="chip blue">{job.employment_label}</span>
+        <span className="chip chip-blue">{job.employment_label}</span>
         <p style={{ lineHeight: 1.8 }}>{job.description}</p>
         <p className="muted">{job.organization.about}</p>
         <div className="row">
