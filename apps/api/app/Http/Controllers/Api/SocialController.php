@@ -31,12 +31,15 @@ class SocialController extends Controller
         }
 
         if ($tab === 'following') {
-            $ids = $viewer->following()->pluck('users.id')->push($viewer->id);
-            $query->whereIn('posts.user_id', $ids);
-        } elseif ($viewer->specialty_title) {
-            $query->leftJoin('users as feed_authors', 'feed_authors.id', '=', 'posts.user_id')
-                ->select('posts.*')
-                ->orderByRaw('case when feed_authors.specialty_title = ? then 0 else 1 end', [$viewer->specialty_title]);
+            $ids = $viewer->following()->pluck('users.id');
+            $query->whereIn('posts.user_id', $ids->isEmpty() ? [0] : $ids);
+        } else {
+            $specialty = $viewer->specialty_title ?? '';
+            $city = $viewer->city ?? '';
+            $query->orderByRaw(
+                '(select (case when specialty_title = ? then 6 else 0 end) + (case when city <> \'\' and city = ? then 3 else 0 end) from users where users.id = posts.user_id) desc',
+                [$specialty, $city],
+            )->orderByRaw('(select count(*) from reactions where reactions.post_id = posts.id) + (select count(*) from comments where comments.post_id = posts.id and comments.hidden_at is null) desc');
         }
 
         $posts = $query->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
@@ -307,6 +310,19 @@ class SocialController extends Controller
         $story->load('author');
 
         return response()->json(['data' => Present::story($story, $request->user())], 201);
+    }
+
+    public function destroyStory(Request $request, Story $story): JsonResponse
+    {
+        abort_unless($story->user_id === $request->user()->id, 403);
+        $path = $story->path;
+        $story->delete();
+        try {
+            \Illuminate\Support\Facades\Storage::disk('public')->delete($path);
+        } catch (\Throwable) {
+        }
+
+        return response()->json(['message' => 'استوری حذف شد.']);
     }
 
     public function viewStory(Request $request, Story $story): JsonResponse

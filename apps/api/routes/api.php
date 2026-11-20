@@ -46,6 +46,7 @@ Route::prefix('v1')->group(function () {
             Route::get('bookmarks', [SocialController::class, 'bookmarks']);
             Route::get('stories', [SocialController::class, 'stories']);
             Route::post('stories', [SocialController::class, 'storeStory']);
+            Route::delete('stories/{story}', [SocialController::class, 'destroyStory']);
             Route::post('stories/{story}/view', [SocialController::class, 'viewStory']);
 
             Route::get('communities', [CommunityController::class, 'index']);

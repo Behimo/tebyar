@@ -166,9 +166,9 @@ export function VerifiedSeal({ user }: { user: Pick<UserCard, 'badges'> }) {
   return <span className="verify-label">احراز هویت شده</span>
 }
 
-export function Sheet({ onClose, children }: { onClose: () => void; children: ReactNode }) {
+export function Sheet({ onClose, children, front = false }: { onClose: () => void; children: ReactNode; front?: boolean }) {
   return createPortal(
-    <div className="overlay is-open" onClick={onClose}>
+    <div className={front ? 'overlay is-open overlay-front' : 'overlay is-open'} onClick={onClose}>
       <div className="sheet sheet-up" onClick={(event) => event.stopPropagation()}>{children}</div>
     </div>,
     document.body,

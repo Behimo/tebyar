@@ -1,13 +1,15 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, assetUrl } from '../api'
 import { useAuth } from '../auth'
 import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
-import { Badges, Empty, ListSkel, MentionBox, Person, PostCard, Skel, Top, errText } from '../ui'
+import { Badges, Empty, ListSkel, MentionBox, Person, PostCard, Sheet, Skel, Top, errText } from '../ui'
 import { ComposeMediaField as ComposeMediaPicker, InstagramPostDetail } from '../post-ui'
 import { Brand, Icon } from '../icons'
 import { readCache, writeCache } from '../cache'
 import { buildStoryTiles, mergeStoryLists, myStories } from '../stories'
+import { StoryStudio } from '../story-studio'
 
 const communitiesKey = 'tebyar-communities'
 
@@ -65,21 +67,44 @@ function useInboxBadges() {
 }
 
 function StoryReel({
-  items,
+  groups,
+  startGroup,
   start,
   onClose,
   onSeen,
+  onDelete,
 }: {
-  items: Story[]
+  groups: Story[][]
+  startGroup: number
   start: number
   onClose: () => void
   onSeen: (id: number) => void
+  onDelete: (id: number) => void
 }) {
+  const [group, setGroup] = useState(startGroup)
   const [index, setIndex] = useState(start)
+  useEffect(() => {
+    setGroup(startGroup)
+    setIndex(start)
+  }, [startGroup, start, groups])
+  const [note, setNote] = useState('')
+  const [menu, setMenu] = useState(false)
+  const items = groups[group] ?? []
   const story = items[index]
-  const go = (next: number) => {
-    if (next >= items.length || next < 0) onClose()
-    else setIndex(next)
+
+  const go = (dir: 1 | -1) => {
+    const next = index + dir
+    if (next >= 0 && next < items.length) {
+      setIndex(next)
+      return
+    }
+    const nextGroup = group + dir
+    if (nextGroup < 0 || nextGroup >= groups.length || (groups[nextGroup]?.length ?? 0) === 0) {
+      onClose()
+      return
+    }
+    setGroup(nextGroup)
+    setIndex(dir > 0 ? 0 : groups[nextGroup].length - 1)
   }
 
   useEffect(() => {
@@ -89,12 +114,17 @@ function StoryReel({
   }, [story?.id])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => go(index + 1), 5000)
+    const timer = window.setTimeout(() => go(1), 5000)
     return () => window.clearTimeout(timer)
-  }, [index, items.length])
+  }, [index, group])
+
+  useEffect(() => {
+    document.body.dataset.cover = 'story'
+    return () => { delete document.body.dataset.cover }
+  }, [])
 
   if (!story) return null
-  return (
+  return createPortal(
     <div className="story-viewer is-open">
       <div className="progress">
         {items.map((item, i) => (
@@ -105,12 +135,36 @@ function StoryReel({
       </div>
       <div className="who">
         <b>{story.author.name}</b>
-        <button className="icon-btn" type="button" onClick={onClose} aria-label="بستن"><Icon name="back" /></button>
+        <span className="story-who-actions">
+          {story.mine && story.id > 0 && (
+            <button className="icon-btn" type="button" aria-label="گزینه‌های استوری" onClick={(event) => { event.stopPropagation(); setMenu(true) }}>
+              <Icon name="more" />
+            </button>
+          )}
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="بستن"><Icon name="back" /></button>
+        </span>
       </div>
-      <div className="media"><img src={assetUrl(story.media_url) || story.media_url} alt="" /></div>
-      <button className="story-hit story-hit-next" type="button" aria-label="بعدی" onClick={() => go(index + 1)} />
-      <button className="story-hit story-hit-prev" type="button" aria-label="قبلی" onClick={() => go(index - 1)} />
-    </div>
+      {note && <p className="story-note">{note}</p>}
+      <div className="media"><img src={assetUrl(story.media_url) || story.media_url} alt="" onError={() => setNote('این تصویر روی گوشی باز نشد.')} /></div>
+      <button className="story-hit story-hit-next" type="button" aria-label="بعدی" onClick={() => go(1)} />
+      <button className="story-hit story-hit-prev" type="button" aria-label="قبلی" onClick={() => go(-1)} />
+      {menu && (
+        <Sheet front onClose={() => setMenu(false)}>
+          <button
+            className="sheet-item danger"
+            type="button"
+            onClick={() => {
+              const id = story.id
+              setMenu(false)
+              onDelete(id)
+            }}
+          >
+            <Icon name="trash" /> حذف استوری
+          </button>
+        </Sheet>
+      )}
+    </div>,
+    document.body,
   )
 }
 
@@ -122,10 +176,10 @@ export function Home() {
   const [loading, setLoading] = useState(() => readPosts('suggested') == null)
   const [fresh, setFresh] = useState(false)
   const [error, setError] = useState('')
-  const [reel, setReel] = useState<Story[] | null>(null)
-  const [reelAt, setReelAt] = useState(0)
+  const [reel, setReel] = useState<{ groups: Story[][]; group: number; index: number } | null>(null)
   const [storyUploading, setStoryUploading] = useState(false)
   const [storyPreview, setStoryPreview] = useState<string | null>(null)
+  const [storyDraft, setStoryDraft] = useState<File | null>(null)
   const { user } = useAuth()
   const badges = useInboxBadges()
   const mine = myStories(stories, user)
@@ -200,10 +254,20 @@ export function Home() {
   const ownCover = storyPreview || assetUrl(mine[mine.length - 1]?.media_url)
   const mineUnseen = mine.some((row) => !row.seen)
 
-  const openReel = (items: Story[], at = 0) => {
-    if (items.length === 0) return
-    setReel(items)
-    setReelAt(at)
+  const storyGroups = () => {
+    const rows: Story[][] = []
+    if (mine.length) rows.push(mine)
+    for (const tile of tiles) {
+      if (tile.items.length) rows.push(tile.items)
+    }
+    return rows
+  }
+
+  const openReel = (authorId: number | null, at = 0) => {
+    const groups = storyGroups()
+    const group = Math.max(0, groups.findIndex((rows) => rows[0]?.author.id === authorId || (authorId == null && rows[0]?.id === 0)))
+    if (!groups[group]?.length && groups.length === 0) return
+    setReel({ groups, group: groups[group] ? group : 0, index: at })
   }
 
   return (
@@ -226,7 +290,7 @@ export function Home() {
         <div className="stories" dir="rtl" aria-label="استوری‌ها">
           <div className={`story story-own${ownCover ? ' has-story' : ''}${mineUnseen ? ' is-unseen' : ownCover ? ' is-seen' : ''}${storyUploading ? ' is-uploading' : ''}`}>
             {ownCover ? (
-              <button className="story-tile" type="button" onClick={() => openReel(mine, 0)}>
+              <button className="story-tile" type="button" onClick={() => openReel(user?.id ?? null, 0)}>
                 <img src={ownCover} alt="" />
               </button>
             ) : (
@@ -235,7 +299,7 @@ export function Home() {
                 <span className="own-label">استوری شما</span>
                 <input hidden type="file" accept="image/*" onChange={(event) => {
                   const file = event.target.files?.[0]
-                  if (file) void publishStory(file).catch(() => setError('آپلود استوری ناموفق بود.'))
+                  if (file) setStoryDraft(file)
                   event.currentTarget.value = ''
                 }} />
               </label>
@@ -245,7 +309,7 @@ export function Home() {
                 +
                 <input hidden type="file" accept="image/*" onChange={(event) => {
                   const file = event.target.files?.[0]
-                  if (file) void publishStory(file).catch(() => setError('آپلود استوری ناموفق بود.'))
+                  if (file) setStoryDraft(file)
                   event.currentTarget.value = ''
                 }} />
               </label>
@@ -257,8 +321,10 @@ export function Home() {
               className={`story story-ring-in${story.unseen ? ' is-unseen' : story.items.length ? ' is-seen' : ''}`}
               type="button"
               onClick={() => {
-                if (story.items.length) openReel(story.items, story.items.findIndex((row) => !row.seen) >= 0 ? story.items.findIndex((row) => !row.seen) : 0)
-                else openReel([{ id: 0, media_url: story.src, expires_at: '', seen: true, mine: false, author: { name: story.name, avatar_url: null } as Story['author'] }])
+                if (story.items.length) {
+                  const at = story.items.findIndex((row) => !row.seen)
+                  openReel(story.items[0]?.author.id ?? null, at >= 0 ? at : 0)
+                }
               }}
             >
               <span className="story-tile"><img src={assetUrl(story.src) || story.src} alt="" /><span className="caption">{story.name}</span></span>
@@ -293,14 +359,41 @@ export function Home() {
       </div>
       {reel && (
         <StoryReel
-          items={reel}
-          start={reelAt}
+          groups={reel.groups}
+          startGroup={reel.group}
+          start={reel.index}
           onClose={() => setReel(null)}
           onSeen={(id) => setStories((rows) => {
             const next = rows.map((row) => row.id === id ? { ...row, seen: true } : row)
             writeStories(next)
             return next
           })}
+          onDelete={(id) => {
+            setStories((rows) => {
+              const next = rows.filter((row) => row.id !== id)
+              writeStories(next)
+              return next
+            })
+            setReel((current) => {
+              if (!current) return null
+              const groups = current.groups.map((rows) => rows.filter((row) => row.id !== id)).filter((rows) => rows.length > 0)
+              if (groups.length === 0) return null
+              const group = Math.min(current.group, groups.length - 1)
+              const index = Math.min(current.index, groups[group].length - 1)
+              return { groups, group, index }
+            })
+            void api(`/stories/${id}`, { method: 'DELETE' }).catch((reason) => setError(errText(reason)))
+          }}
+        />
+      )}
+      {storyDraft && (
+        <StoryStudio
+          file={storyDraft}
+          busy={storyUploading}
+          onCancel={() => setStoryDraft(null)}
+          onPublish={(file) => {
+            void publishStory(file).then(() => setStoryDraft(null)).catch(() => setError('آپلود استوری ناموفق بود.'))
+          }}
         />
       )}
     </>
@@ -338,14 +431,18 @@ export function Compose() {
 
   return (
     <>
-      <Top title="انتشار پست" back />
-      <form className="screen-body pad stack compose-form" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <MentionBox multiline className="area" value={body} onChange={setBody} placeholder="تجربه کاری، خبر یا نکته‌ای برای همکاران... برای منشن @ بنویسید" />
+      <Top title="انتشار" back action={<button className="icon-btn" type="button" aria-label="انتشار" disabled={busy} onClick={() => void submit()}><Icon name="send" /></button>} />
+      <form className="screen-body compose-studio" onSubmit={(event) => { event.preventDefault(); void submit() }}>
         <ComposeMediaPicker slides={slides} coverIndex={coverIndex} onSlides={setSlides} onCover={setCoverIndex} />
-        <input className="field" value={link} onChange={(event) => setLink(event.target.value)} placeholder="لینک مقاله یا خبر" />
-        <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="عنوان لینک" />
+        <div className="compose-caption">
+          <MentionBox multiline className="area" value={body} onChange={setBody} placeholder="چه چیزی برای همکاران می‌نویسید؟ با @ منشن کنید" />
+        </div>
+        <details className="compose-extra">
+          <summary>لینک مقاله یا خبر</summary>
+          <input className="field" value={link} onChange={(event) => setLink(event.target.value)} placeholder="نشانی" />
+          <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="عنوان لینک" />
+        </details>
         {error && <div className="error">{error}</div>}
-        <button className="btn primary full" disabled={busy} type="submit">{busy ? 'در حال انتشار...' : 'انتشار'}</button>
       </form>
     </>
   )

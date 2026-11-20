@@ -222,32 +222,33 @@ class MessageController extends Controller
         ]);
         $conversation->forceFill(['last_message_at' => now()])->save();
         $this->markRead($conversation, $request->user());
+        $payload = Present::message($message, $conversation, $request->user());
+        $sender = $request->user();
 
-        if ($conversation->isGroup()) {
-            $recipientIds = $conversation->participants()
-                ->where('user_id', '!=', $request->user()->id)
-                ->pluck('user_id');
-            foreach ($recipientIds as $recipientId) {
-                $recipient = User::query()->find($recipientId);
-                if ($recipient) {
-                    Alerts::send($recipient, 'message', 'پیام گروهی', $request->user()->name.' در «'.$conversation->title.'» پیام فرستاد.', '/messages/'.$conversation->id);
+        app()->terminating(function () use ($conversation, $message, $sender) {
+            try {
+                if ($conversation->isGroup()) {
+                    $recipientIds = $conversation->participants()
+                        ->where('user_id', '!=', $sender->id)
+                        ->pluck('user_id');
+                    foreach ($recipientIds as $recipientId) {
+                        $recipient = User::query()->find($recipientId);
+                        if ($recipient) {
+                            Alerts::send($recipient, 'message', 'پیام گروهی', $sender->name.' در «'.$conversation->title.'» پیام فرستاد.', '/messages/'.$conversation->id);
+                        }
+                    }
+                } else {
+                    $peer = $conversation->peer($sender);
+                    Alerts::send($peer, 'message', 'پیام جدید', $sender->name.' برای شما پیام فرستاد.', '/messages/'.$conversation->id);
                 }
+                broadcast(new MessageSent($message));
+                broadcast(new ConversationUpdated($conversation, $conversation->participantIds()));
+            } catch (\Throwable $exception) {
+                report($exception);
             }
-        } else {
-            $peer = $conversation->peer($request->user());
-            Alerts::send($peer, 'message', 'پیام جدید', $request->user()->name.' برای شما پیام فرستاد.', '/messages/'.$conversation->id);
-        }
+        });
 
-        try {
-            broadcast(new MessageSent($message));
-            broadcast(new ConversationUpdated($conversation, $conversation->participantIds()));
-        } catch (\Throwable $exception) {
-            report($exception);
-        }
-
-        $conversation->refresh();
-
-        return response()->json(['data' => Present::message($message, $conversation, $request->user())], 201);
+        return response()->json(['data' => $payload], 201);
     }
 
     public function attachment(Request $request, Message $message): StreamedResponse

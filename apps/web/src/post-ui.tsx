@@ -208,10 +208,11 @@ export function InstagramPostDetail({
 
   return (
     <article className="ig-post" aria-label="جزئیات پست">
-      {hasMedia && <MediaCarousel post={post} className="ig-post-media" />}
-      <div className="ig-owner-row">
+      <header className="ig-author">
+        <Person user={post.author} />
         <PostOwnerActions post={post} onChange={onChange} onRemove={onRemove} />
-      </div>
+      </header>
+      {hasMedia && <MediaCarousel post={post} className="ig-post-media" />}
       <IgPostToolbar post={post} saved={saved} setSaved={setSaved} onLike={toggleLike} />
       <div className="ig-post-feed" id="comments">
         {post.comments_count > 0 && (
@@ -383,36 +384,45 @@ export function ComposeMediaField({
     onSlides(slides.filter((item) => item.id !== id))
   }
 
+  const active = slides[coverIndex] ?? slides[0]
+  const fileInput = (
+    <input hidden type="file" accept="image/*,video/mp4,video/webm" multiple onChange={(event) => { addFiles(event.target.files); event.currentTarget.value = '' }} />
+  )
+
   return (
-    <div className="compose-media">
-      <label className="compose-media-add">
-        <span>افزودن اسلاید (حداکثر ۶)</span>
-        <input hidden type="file" accept="image/*,video/mp4,video/webm" multiple onChange={(e) => addFiles(e.target.files)} />
-      </label>
-      {slides.length > 0 && (
-        <div className="compose-media-strip">
-          {slides.map((slide, index) => (
-            <button
-              key={slide.id}
-              type="button"
-              className={index === coverIndex ? 'compose-thumb is-cover' : 'compose-thumb'}
-              onClick={() => onCover(index)}
-            >
-              <img src={slide.preview} alt="" />
-              {index === coverIndex && <span className="cover-tag">کاور</span>}
-              <span
-                className="remove"
-                role="button"
-                tabIndex={-1}
-                onClick={(event) => { event.stopPropagation(); remove(slide.id) }}
-              >
-                ×
-              </span>
-            </button>
-          ))}
+    <div className="compose-picker">
+      {active ? (
+        <div className="compose-stage">
+          {active.file.type.startsWith('video')
+            ? <video src={active.preview} controls playsInline />
+            : <img src={active.preview} alt="" />}
         </div>
+      ) : (
+        <label className="compose-stage compose-stage-empty">
+          <strong>انتخاب عکس</strong>
+          <span>تا ۶ تصویر، اولی کاور فید است</span>
+          {fileInput}
+        </label>
       )}
-      {slides.length > 1 && <p className="muted compose-hint">برای انتخاب کاور روی تصویر بزنید. در فید همان تصویر نمایش داده می‌شود.</p>}
+      <div className="compose-film">
+        {slides.map((slide, index) => (
+          <button
+            key={slide.id}
+            type="button"
+            className={index === coverIndex ? 'compose-thumb is-cover' : 'compose-thumb'}
+            onClick={() => onCover(index)}
+          >
+            <img src={slide.preview} alt="" />
+            <span className="remove" role="button" tabIndex={-1} onClick={(event) => { event.stopPropagation(); remove(slide.id) }}>×</span>
+          </button>
+        ))}
+        {slides.length > 0 && slides.length < 6 && (
+          <label className="compose-add-tile">
+            +
+            {fileInput}
+          </label>
+        )}
+      </div>
     </div>
   )
 }

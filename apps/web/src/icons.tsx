@@ -23,6 +23,7 @@ const paths: Record<string, ReactNode> = {
   edit: <><path d="M12 20h9" /><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z" /></>,
   settings: <><circle cx="12" cy="12" r="3" /><path d="M12 3v2M12 19v2M4.9 6.5 6.3 7.9M17.7 16.1 19.1 17.5M3 12h2M19 12h2M4.9 17.5 6.3 16.1M17.7 7.9 19.1 6.5" /></>,
   camera: <><path d="M4 8h4l2-2h4l2 2h4v12H4z" /><circle cx="12" cy="13" r="3.2" /></>,
+  trash: <><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M7 7l1 13h8l1-13" /></>,
   link: <><path d="M10 13a4 4 0 0 0 5.7.3l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.2 1.2" /><path d="M14 11a4 4 0 0 0-5.7-.3L5.8 13.2a4 4 0 0 0 5.7 5.7l1.2-1.2" /></>,
 }
 

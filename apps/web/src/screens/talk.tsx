@@ -250,7 +250,7 @@ export function Chat() {
         title={title}
         back
         action={conversation?.type === 'group' && conversation.am_admin
-          ? <button className="text-btn" type="button" onClick={() => setManage(true)}>اعضا</button>
+          ? <button className="icon-btn" type="button" aria-label="اعضای گروه" onClick={() => setManage(true)}><Icon name="users" /></button>
           : undefined}
       />
       <div className="screen-body chat-screen">
@@ -278,14 +278,31 @@ export function Chat() {
           onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
-            if (text) form.set('body', text)
+            const outgoing = text
+            if (outgoing) form.set('body', outgoing)
+            const pending = -Date.now()
+            if (outgoing) {
+              setMessages((rows) => [...rows, {
+                id: pending,
+                body: outgoing,
+                mine: true,
+                read: false,
+                attachment_url: null,
+                attachment_name: null,
+                created_at: new Date().toISOString(),
+              }])
+              setText('')
+            }
             void api<{ data: ChatMessage }>(`/conversations/${id}/messages`, { method: 'POST', body: form })
               .then((sent) => {
-                setMessages((rows) => [...rows, { ...sent.data, mine: true }])
-                setText('')
+                setMessages((rows) => rows.map((row) => row.id === pending ? { ...sent.data, mine: true } : row))
                 if (fileRef.current) fileRef.current.value = ''
               })
-              .catch((reason) => setError(errText(reason)))
+              .catch((reason) => {
+                setMessages((rows) => rows.filter((row) => row.id !== pending))
+                setText(outgoing)
+                setError(errText(reason))
+              })
           }}
         >
           <button className="icon-btn" type="button" aria-label="پیوست" onClick={() => fileRef.current?.click()}>
@@ -673,7 +690,7 @@ export function Explore() {
   return (
     <>
       <Top title="اکسپلور" back />
-      <div className="screen-body pad search-screen">
+      <div className="screen-body pad search-screen explore-screen">
         <div className="field">
           <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="نام، پست یا هشتگ" />
         </div>
@@ -695,22 +712,11 @@ export function Explore() {
           </button>
         ))}
         {!loading && q.trim().length < 2 && posts.length === 0 && <Empty title="پستی نیست" text="اولین پست‌ها به‌زودی اینجا ظاهر می‌شوند." />}
-        {q.trim().length >= 2
-          ? posts.map((post) => (
-            <PostCard
-              key={post.id}
-              post={post}
-              onComment={() => setCommentId(post.id)}
-              onChange={() => undefined}
-            />
-          ))
-          : (
-            <PostGrid
-              posts={posts}
-              aspect="portrait"
-              onOpen={(_, index) => setViewerIndex(index)}
-            />
-          )}
+        <PostGrid
+          posts={posts}
+          aspect="portrait"
+          onOpen={(_, index) => setViewerIndex(index)}
+        />
       </div>
       {viewerIndex != null && posts.length > 0 && (
         <PostViewer posts={posts} startIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
