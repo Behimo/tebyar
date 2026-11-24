@@ -58,11 +58,11 @@ function Shell() {
         )}
         {sheet && (
           <div className="overlay is-open" onClick={() => setSheet(false)}>
-            <div className="sheet" onClick={(event) => event.stopPropagation()}>
+            <div className="sheet sheet-up" onClick={(event) => event.stopPropagation()}>
               <h2>انتشار</h2>
-              <Link className="sheet-item" to="/compose" onClick={() => setSheet(false)}>پست اجتماعی</Link>
-              {user?.can_create_case && <Link className="sheet-item" to="/case" onClick={() => setSheet(false)}>طرح کیس ناشناس</Link>}
-              {user?.can_create_poll && <Link className="sheet-item" to="/poll" onClick={() => setSheet(false)}>نظرسنجی تخصصی</Link>}
+              <Link className="sheet-item" to="/compose" onClick={() => setSheet(false)}><Icon name="edit" /> پست اجتماعی</Link>
+              {user?.can_create_case && <Link className="sheet-item" to="/case" onClick={() => setSheet(false)}><Icon name="book" /> طرح کیس ناشناس</Link>}
+              {user?.can_create_poll && <Link className="sheet-item" to="/poll" onClick={() => setSheet(false)}><Icon name="award" /> نظرسنجی تخصصی</Link>}
             </div>
           </div>
         )}

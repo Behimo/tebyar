@@ -62,12 +62,32 @@ export function MediaCarousel({ post, className = '' }: { post: Post; className?
       ))}
       {slides.length > 1 && (
         <>
+          {index > 0 && (
+            <button
+              type="button"
+              className="media-nav media-nav--prev"
+              aria-label="اسلاید قبلی"
+              onClick={(event) => { event.stopPropagation(); setIndex((i) => Math.max(0, i - 1)) }}
+            >
+              <Icon name="chevronRight" />
+            </button>
+          )}
+          {index < slides.length - 1 && (
+            <button
+              type="button"
+              className="media-nav media-nav--next"
+              aria-label="اسلاید بعدی"
+              onClick={(event) => { event.stopPropagation(); setIndex((i) => Math.min(slides.length - 1, i + 1)) }}
+            >
+              <Icon name="chevronLeft" />
+            </button>
+          )}
           <div className="media-dots">
             {slides.map((_, i) => (
               <button key={i} type="button" className={i === index ? 'dot is-on' : 'dot'} aria-label={`اسلاید ${i + 1}`} onClick={(event) => { event.stopPropagation(); setIndex(i) }} />
             ))}
           </div>
-          <span className="media-count">{index + 1}/{slides.length}</span>
+          <span className="media-count">{fa.format(index + 1)}/{fa.format(slides.length)}</span>
         </>
       )}
     </div>
@@ -163,7 +183,11 @@ export function MentionBox({
 
 export function VerifiedSeal({ user }: { user: Pick<UserCard, 'badges'> }) {
   if (!(user.badges.identity || user.badges.license)) return null
-  return <span className="verify-label">احراز هویت شده</span>
+  return (
+    <span className="verified-badge" title="احراز هویت شده" aria-label="احراز هویت شده">
+      <Icon name="verified" />
+    </span>
+  )
 }
 
 export function Sheet({ onClose, children, front = false }: { onClose: () => void; children: ReactNode; front?: boolean }) {
@@ -176,14 +200,18 @@ export function Sheet({ onClose, children, front = false }: { onClose: () => voi
 }
 
 export function MentionText({ text }: { text: string }) {
-  const parts = text.split(/(@[a-z0-9][a-z0-9_-]*)/gi)
+  const parts = text.split(/(@[a-z0-9][a-z0-9_-]*|#[\p{L}\p{N}_-]+)/giu)
   return (
     <>
-      {parts.map((part, index) => (
-        part.startsWith('@')
-          ? <Link key={index} className="mention" to={`/doctors/${part.slice(1)}`}>{part}</Link>
-          : <span key={index}>{part}</span>
-      ))}
+      {parts.map((part, index) => {
+        if (part.startsWith('@')) {
+          return <Link key={index} className="mention" to={`/doctors/${part.slice(1)}`} onClick={(e) => e.stopPropagation()}>{part}</Link>
+        }
+        if (part.startsWith('#')) {
+          return <Link key={index} className="hashtag" to="/explore" onClick={(e) => e.stopPropagation()}>{part}</Link>
+        }
+        return <span key={index}>{part}</span>
+      })}
     </>
   )
 }
@@ -267,6 +295,14 @@ export function Skel() {
   )
 }
 
+function linkHost(url: string): string {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '')
+  } catch {
+    return url
+  }
+}
+
 export function PostCard({
   post,
   onChange,
@@ -286,6 +322,8 @@ export function PostCard({
 }) {
   const navigate = useNavigate()
   const [saved, setSaved] = useState(post.bookmarked)
+  const [reposted, setReposted] = useState(false)
+  useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
   const hasMedia = post.media.length > 0 || postCover(post)
   const toggle = async () => {
     const next = await api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' })
@@ -316,19 +354,32 @@ export function PostCard({
   const cardClass = variant === 'following'
     ? 'card post-card post-card--following'
     : 'card post-card post-card--featured'
+  const authorHref = !post.author.anonymous && post.author.slug
+    ? (post.author.is_self ? '/profile' : `/doctors/${post.author.slug}`)
+    : null
+  const authorContent = (
+    <>
+      <Avatar user={post.author} />
+      <div className="meta">
+        <div className="name-row">
+          <span className="name">{post.author.name}</span>
+          <VerifiedSeal user={post.author} />
+        </div>
+        <div className="spec">
+          {post.author.specialty_title || post.author.role_label}
+          {post.created_at && <span className="when"> · {when(post.created_at)}</span>}
+        </div>
+      </div>
+    </>
+  )
+  const repostCover = post.repost_of ? postCover(post.repost_of) : undefined
 
   return (
     <article className={cardClass}>
       <div className="post-head">
-        <Avatar user={post.author} />
-        <div className="meta">
-          <div className="name">{post.author.name}</div>
-          <div className="spec">
-            {post.author.specialty_title || post.author.role_label}
-            {post.created_at && <span className="when"> · {when(post.created_at)}</span>}
-          </div>
-        </div>
-        <VerifiedSeal user={post.author} />
+        {authorHref
+          ? <Link className="post-author-link" to={authorHref}>{authorContent}</Link>
+          : <div className="post-author-link">{authorContent}</div>}
         <PostOwnerActions post={post} onChange={onChange} onRemove={onRemove} />
       </div>
       {media}
@@ -341,23 +392,78 @@ export function PostCard({
             </button>
           )
       )}
-      {post.repost_of && <p className="post-caption muted">بازنشر از {post.repost_of.author.name}</p>}
-      {post.link_url && <a className="post-link" href={post.link_url} rel="noreferrer">{post.link_title || post.link_url}</a>}
+      {post.repost_of && (
+        <Link className="repost-quote" to={`/posts/${post.repost_of.id}`}>
+          <div className="repost-quote-head">
+            <Avatar user={post.repost_of.author} small />
+            <b>{post.repost_of.author.name}</b>
+            <VerifiedSeal user={post.repost_of.author} />
+            <span className="muted">{post.repost_of.author.specialty_title || post.repost_of.author.role_label}</span>
+          </div>
+          {post.repost_of.body && <p className="repost-quote-body">{post.repost_of.body}</p>}
+          {repostCover && (
+            <div className="repost-quote-media">
+              <img src={repostCover} alt="" loading="lazy" />
+            </div>
+          )}
+        </Link>
+      )}
+      {post.link_url && (
+        <a className="post-link-card" href={post.link_url} target="_blank" rel="noreferrer">
+          <span className="post-link-icon"><Icon name="external" /></span>
+          <span className="post-link-body">
+            <span className="post-link-title">{post.link_title || post.link_url}</span>
+            <span className="post-link-host">{linkHost(post.link_url)}</span>
+          </span>
+        </a>
+      )}
       <div className="actions">
-        <button className="bookmark" type="button" aria-pressed={saved} aria-label="ذخیره" onClick={() => {
-          setSaved(!saved)
-          void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
-        }}><Icon name="bookmark" /></button>
+        <button
+          className={saved ? 'bookmark is-on' : 'bookmark'}
+          type="button"
+          aria-pressed={saved}
+          aria-label="ذخیره"
+          onClick={() => {
+            const next = !saved
+            setSaved(next)
+            void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
+              .then(() => onChange({ ...post, bookmarked: next }))
+          }}
+        >
+          <Icon name="bookmark" filled={saved} />
+        </button>
         <div className="reactions">
-          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" onClick={() => void toggle()}><Icon name="heart" /> {fa.format(post.reactions_count)}</button>
-          {detail
-            ? <button className="react comment" type="button" onClick={onComment}><Icon name="comment" /> {fa.format(post.comments_count)}</button>
-            : onComment
-              ? <button className="react comment" type="button" onClick={onComment}><Icon name="comment" /> {fa.format(post.comments_count)}</button>
-              : <Link className="react comment" to={`/posts/${post.id}#comments`}><Icon name="comment" /> {fa.format(post.comments_count)}</Link>}
-          <button className="react share" type="button" onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))}><Icon name="repost" /> {fa.format(post.reposts_count)}</button>
+          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" aria-pressed={post.reacted} onClick={() => void toggle()}>
+            <Icon name="heart" filled={post.reacted} /> {fa.format(post.reactions_count)}
+          </button>
+          {detail || onComment
+            ? (
+              <button className="react comment" type="button" onClick={onComment}>
+                <Icon name="comment" filled={false} /> {fa.format(post.comments_count)}
+              </button>
+            )
+            : (
+              <Link className="react comment" to={`/posts/${post.id}#comments`}>
+                <Icon name="comment" filled={false} /> {fa.format(post.comments_count)}
+              </Link>
+            )}
+          <button
+            className={reposted ? 'react share is-on' : 'react share'}
+            type="button"
+            onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => {
+              setReposted(true)
+              onChange({ ...post, reposts_count: post.reposts_count + 1 })
+            })}
+          >
+            <Icon name="repost" /> {fa.format(post.reposts_count)}
+          </button>
         </div>
       </div>
+      {!detail && post.comments_count > 0 && (
+        onComment
+          ? <button type="button" className="post-comments-hint" onClick={onComment}><span>مشاهده همه {fa.format(post.comments_count)} نظر</span></button>
+          : <Link className="post-comments-hint" to={`/posts/${post.id}#comments`}><span>مشاهده همه {fa.format(post.comments_count)} نظر</span></Link>
+      )}
     </article>
   )
 }

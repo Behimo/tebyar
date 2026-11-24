@@ -4,9 +4,9 @@ import { api, when } from '../api'
 import { readCache, writeCache } from '../cache'
 import { useAuth } from '../auth'
 import { Icon } from '../icons'
-import type { ChatMessage, CommunityCard, Conversation, Entry, Me, Post, Topic, UserCard } from '../types'
-import { Avatar, Empty, ListSkel, PostCard, Sheet, Top, VerifiedSeal, errText } from '../ui'
-import { CommentSheet, PostGrid, PostViewer } from '../post-ui'
+import type { ChatMessage, CommunityCard, Conversation, Me, Post, Topic, UserCard } from '../types'
+import { Avatar, Empty, ListSkel, Sheet, Top, VerifiedSeal, errText } from '../ui'
+import { PostGrid, PostViewer } from '../post-ui'
 import { realtime } from '../realtime'
 
 const conversationsKey = 'tebyar-conversations'
@@ -412,6 +412,17 @@ function ProfileTabs({ payload }: { payload: ProfilePayload; onChange?: () => vo
   )
 }
 
+const faCount = new Intl.NumberFormat('fa-IR')
+
+const entryIcons: Record<string, string> = {
+  education: 'graduation',
+  experience: 'briefcase',
+  publication: 'book',
+  certificate: 'award',
+  talk: 'award',
+  skill: 'check',
+}
+
 function ProfileLayout({
   user,
   actions,
@@ -423,34 +434,61 @@ function ProfileLayout({
   children: ReactNode
 }) {
   const [aboutOpen, setAboutOpen] = useState(false)
-  const subtitle = [user.specialty_title || user.role_label, user.city].filter(Boolean).join(' · ')
+  const roleOrSpec = user.specialty_title || user.role_label
+  const hasEntries = (user.entries?.length ?? 0) > 0
   return (
     <div className="profile-layout">
       <header className="profile-hero-card">
-        <Avatar user={user} large />
-        <div className="profile-name-row">
-          <h1>{user.name}</h1>
-          <VerifiedSeal user={user} />
-        </div>
-        {subtitle && <p className="profile-sub">{subtitle}</p>}
-        {user.specialty_title && (
-          <span className="chip chip-blue profile-spec-chip">تخصص {user.badges.specialty ? 'تأییدشده' : 'خوداظهاری'}</span>
-        )}
-        <div className="stats stats--inline">
-          <div><b>{user.posts_count}</b><span>پست</span></div>
-          <div><b>{user.followers_count}</b><span>دنبال‌کننده</span></div>
-          <div><b>{user.following_count}</b><span>دنبال‌شده</span></div>
-        </div>
-        <div className="profile-actions">{actions}</div>
-        <button className="profile-about-toggle" type="button" onClick={() => setAboutOpen((v) => !v)}>
-          {aboutOpen ? 'بستن درباره' : 'درباره و سوابق'}
-        </button>
-        {aboutOpen && (
-          <div className="profile-about">
-            <AboutSection user={user} />
-            <p className="muted profile-disclaimer">نشان آبی فقط تأیید هویت فردی است. اعتبار علمی جدا نمایش داده می‌شود.</p>
+        <div className="profile-cover" aria-hidden="true" />
+        <div className="profile-hero-inner">
+          <div className="profile-avatar-wrap">
+            <Avatar user={user} large />
           </div>
-        )}
+          <div className="profile-name-row">
+            <h1>{user.name}</h1>
+            <VerifiedSeal user={user} />
+          </div>
+          {user.headline && <p className="profile-headline">{user.headline}</p>}
+          {(roleOrSpec || user.city) && (
+            <p className="profile-sub">
+              {roleOrSpec && <span>{roleOrSpec}</span>}
+              {roleOrSpec && user.city && <span aria-hidden="true">·</span>}
+              {user.city && <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}><Icon name="mapPin" />{user.city}</span>}
+            </p>
+          )}
+          <div className="profile-badges-row">
+            {user.specialty_title && (
+              <span className={user.badges.specialty ? 'chip chip-teal' : 'chip chip-blue'}>
+                {user.badges.specialty && <Icon name="check" />}
+                تخصص {user.badges.specialty ? 'تأییدشده' : 'خوداظهاری'}
+              </span>
+            )}
+            {user.badges.education && !user.badges.license && (
+              <span className="chip chip-violet"><Icon name="graduation" /> هویت تحصیلی</span>
+            )}
+          </div>
+          {user.bio && <p className="profile-bio">{user.bio}</p>}
+          <div className="profile-stats-bar">
+            <div><b>{faCount.format(user.posts_count)}</b><span>پست</span></div>
+            <div><b>{faCount.format(user.followers_count)}</b><span>دنبال‌کننده</span></div>
+            <div><b>{faCount.format(user.following_count)}</b><span>دنبال‌شده</span></div>
+          </div>
+          <div className="profile-actions">{actions}</div>
+          <button
+            className={aboutOpen ? 'profile-about-toggle is-open' : 'profile-about-toggle'}
+            type="button"
+            onClick={() => setAboutOpen((v) => !v)}
+          >
+            <span>{aboutOpen ? 'بستن سوابق' : hasEntries ? 'سوابق علمی و حرفه‌ای' : 'اطلاعات و اعتبارسنجی'}</span>
+            <Icon name="chevronLeft" />
+          </button>
+          {aboutOpen && (
+            <div className="profile-about">
+              <AboutSection user={user} />
+              <p className="profile-disclaimer">نشان آبی فقط تأیید هویت فردی است. اعتبار علمی جدا نمایش داده می‌شود.</p>
+            </div>
+          )}
+        </div>
       </header>
       {children}
     </div>
@@ -517,15 +555,16 @@ export function DoctorPage() {
 
   return (
     <>
-      <Top title="پروفایل" back />
+      <Top title={user?.name || 'پروفایل'} back />
       <div className="screen-body profile-screen">
         {error && <div className="error pad">{error}</div>}
+        {!user && !error && <div className="pad"><ListSkel rows={5} /></div>}
         {user && (
           <ProfileLayout
             user={user}
             actions={!user.is_self ? (
               <>
-                <button className="btn btn-primary" type="button" onClick={() => void api(`/doctors/${user.id}/follow`, { method: user.is_following ? 'DELETE' : 'POST' }).then(load)}>
+                <button className={user.is_following ? 'btn btn-ghost' : 'btn btn-primary'} type="button" onClick={() => void api(`/doctors/${user.id}/follow`, { method: user.is_following ? 'DELETE' : 'POST' }).then(load)}>
                   {user.is_following ? 'دنبال می‌کنید' : 'دنبال کردن'}
                 </button>
                 {user.id && (
@@ -549,28 +588,31 @@ export function DoctorPage() {
 }
 
 function AboutSection({ user }: { user: UserCard | Me }) {
-  const grouped = groupEntries(user.entries || [])
+  const entries = user.entries || []
   return (
-    <>
-      <div className="about-card">
-        {user.bio && <p style={{ lineHeight: 1.75, marginBottom: 12 }}>{user.bio}</p>}
-        {Object.entries(grouped).map(([kind, rows]) => (
-          <div key={kind} className="kv">
-            <span className="k">{entryLabels[kind] || kind}</span>
-            <span>{rows.map((row) => [row.title, row.subtitle, row.year].filter(Boolean).join(' · ')).join('؛ ')}</span>
-          </div>
-        ))}
-        {!user.bio && Object.keys(grouped).length === 0 && <p className="muted">بیوگرافی هنوز تکمیل نشده است.</p>}
-      </div>
-    </>
+    <div className="about-card">
+      {entries.length > 0 ? (
+        <div className="profile-entries-list">
+          {entries.map((entry) => (
+            <div key={entry.id} className="profile-entry-item">
+              <span className="profile-entry-icon">
+                <Icon name={entryIcons[entry.kind] || 'award'} />
+              </span>
+              <div className="profile-entry-body">
+                <div className="profile-entry-kind">{entryLabels[entry.kind] || entry.kind}</div>
+                <div className="profile-entry-title">{entry.title}</div>
+                {(entry.subtitle || entry.year) && (
+                  <div className="profile-entry-sub">{[entry.subtitle, entry.year].filter(Boolean).join(' · ')}</div>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <p className="muted" style={{ fontSize: 13 }}>سابقه علمی یا حرفه‌ای هنوز ثبت نشده است.</p>
+      )}
+    </div>
   )
-}
-
-function groupEntries(entries: Entry[]): Record<string, Entry[]> {
-  return entries.reduce<Record<string, Entry[]>>((acc, entry) => {
-    acc[entry.kind] = [...(acc[entry.kind] || []), entry]
-    return acc
-  }, {})
 }
 
 export function EditProfile() {
@@ -655,7 +697,6 @@ export function Explore() {
   const [posts, setPosts] = useState<Post[]>(() => readCache<Post[]>(exploreKey) ?? [])
   const [loading, setLoading] = useState(() => readCache<Post[]>(exploreKey) == null)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
-  const [commentId, setCommentId] = useState<number | null>(null)
 
   useEffect(() => {
   if (q.trim().length >= 2) {
@@ -690,28 +731,34 @@ export function Explore() {
   return (
     <>
       <Top title="اکسپلور" back />
-      <div className="screen-body pad search-screen explore-screen">
-        <div className="field">
-          <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="نام، پست یا هشتگ" />
-        </div>
-        {tags.length > 0 && (
-          <div className="chips explore-tags">
-            {tags.map((tag) => (
-              <button key={tag} className="chip chip-blue" type="button" onClick={() => setQ(`#${tag}`)}>#{tag}</button>
-            ))}
+      <div className="screen-body search-screen explore-screen">
+        <div className="pad">
+          <div className="field">
+            <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="نام، پست یا هشتگ" />
           </div>
-        )}
-        {loading && posts.length === 0 && doctors.length === 0 && <p className="muted pad">در حال بارگذاری...</p>}
-        {doctors.map((doctor) => (
-          <button key={doctor.id} className="list-row" type="button" onClick={() => doctor.slug && navigate(`/doctors/${doctor.slug}`)}>
-            <Avatar user={doctor} />
-            <div className="body">
-              <div className="title">{doctor.name}</div>
-              <div className="sub">{doctor.specialty_title || doctor.role_label} · {doctor.city}</div>
+          {tags.length > 0 && (
+            <div className="chips explore-tags">
+              {tags.map((tag) => (
+                <button key={tag} className="chip chip-blue" type="button" onClick={() => setQ(`#${tag}`)}>#{tag}</button>
+              ))}
             </div>
-          </button>
-        ))}
-        {!loading && q.trim().length < 2 && posts.length === 0 && <Empty title="پستی نیست" text="اولین پست‌ها به‌زودی اینجا ظاهر می‌شوند." />}
+          )}
+          {loading && posts.length === 0 && doctors.length === 0 && <p className="muted">در حال بارگذاری...</p>}
+          {doctors.map((doctor) => (
+            <button key={doctor.id} className="list-row" type="button" onClick={() => doctor.slug && navigate(`/doctors/${doctor.slug}`)}>
+              <Avatar user={doctor} />
+              <div className="body">
+                <div className="title">{doctor.name}</div>
+                <div className="sub">{doctor.specialty_title || doctor.role_label} · {doctor.city}</div>
+              </div>
+            </button>
+          ))}
+          {!loading && posts.length === 0 && doctors.length === 0 && (
+            q.trim().length >= 2
+              ? <Empty title="نتیجه‌ای نیست" text="نام، متن پست یا هشتگ دیگری را امتحان کنید." />
+              : <Empty title="پستی نیست" text="اولین پست‌ها به‌زودی اینجا ظاهر می‌شوند." />
+          )}
+        </div>
         <PostGrid
           posts={posts}
           aspect="portrait"
@@ -721,7 +768,6 @@ export function Explore() {
       {viewerIndex != null && posts.length > 0 && (
         <PostViewer posts={posts} startIndex={viewerIndex} onClose={() => setViewerIndex(null)} />
       )}
-      <CommentSheet postId={commentId} open={commentId != null} onClose={() => setCommentId(null)} />
     </>
   )
 }

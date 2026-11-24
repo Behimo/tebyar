@@ -1,9 +1,73 @@
 import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, when } from './api'
+import { useAuth } from './auth'
 import type { Comment, Post } from './types'
-import { Avatar, MediaCarousel, MentionBox, MentionText, Person, PostOwnerActions, postCover, PostCard, errText } from './ui'
+import { Avatar, ListSkel, MediaCarousel, MentionBox, MentionText, Person, PostOwnerActions, VerifiedSeal, postCover, PostCard, errText } from './ui'
 import { Icon } from './icons'
+
+const faCount = new Intl.NumberFormat('fa-IR')
+
+type ReplyTarget = { id: number; name: string }
+
+function authorLink(user: Comment['author']): string | null {
+  if (user.anonymous || !user.slug) return null
+  return user.is_self ? '/profile' : `/doctors/${user.slug}`
+}
+
+function IgCommentBlock({
+  comment,
+  onReplyToThread,
+}: {
+  comment: Comment
+  onReplyToThread: (target: ReplyTarget) => void
+}) {
+  const thread = { id: comment.id, name: comment.author.name }
+  const href = authorLink(comment.author)
+  return (
+    <article className="ig-comment">
+      <Avatar user={comment.author} small />
+      <div className="ig-comment-body">
+        <div className="ig-comment-bubble">
+          <div className="ig-comment-head">
+            {href
+              ? <Link className="ig-comment-author" to={href}>{comment.author.name}</Link>
+              : <span className="ig-comment-author">{comment.author.name}</span>}
+            <VerifiedSeal user={comment.author} />
+          </div>
+          <p className="ig-comment-text"><MentionText text={comment.body} /></p>
+        </div>
+        <div className="ig-comment-meta">
+          {comment.created_at && <time>{when(comment.created_at)}</time>}
+          <button type="button" className="ig-reply-btn" onClick={() => onReplyToThread(thread)}>پاسخ</button>
+        </div>
+        {comment.replies?.map((reply) => {
+          const replyHref = authorLink(reply.author)
+          return (
+            <article key={reply.id} className="ig-comment ig-comment--nested">
+              <Avatar user={reply.author} small />
+              <div className="ig-comment-body">
+                <div className="ig-comment-bubble">
+                  <div className="ig-comment-head">
+                    {replyHref
+                      ? <Link className="ig-comment-author" to={replyHref}>{reply.author.name}</Link>
+                      : <span className="ig-comment-author">{reply.author.name}</span>}
+                    <VerifiedSeal user={reply.author} />
+                  </div>
+                  <p className="ig-comment-text"><MentionText text={reply.body} /></p>
+                </div>
+                <div className="ig-comment-meta">
+                  {reply.created_at && <time>{when(reply.created_at)}</time>}
+                  <button type="button" className="ig-reply-btn" onClick={() => onReplyToThread(thread)}>پاسخ</button>
+                </div>
+              </div>
+            </article>
+          )
+        })}
+      </div>
+    </article>
+  )
+}
 
 export function CommentSheet({
   postId,
@@ -16,14 +80,25 @@ export function CommentSheet({
   onClose: () => void
   onChange?: (post: Post) => void
 }) {
+  const { user } = useAuth()
   const [post, setPost] = useState<Post | null>(null)
+  const [loading, setLoading] = useState(false)
   const [text, setText] = useState('')
+  const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [visible, setVisible] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     if (!open || !postId) return
-    void api<{ data: Post }>(`/posts/${postId}`).then((payload) => setPost(payload.data)).catch((reason) => setError(errText(reason)))
+    setLoading(true)
+    setError('')
+    setReplyTo(null)
+    void api<{ data: Post }>(`/posts/${postId}`)
+      .then((payload) => setPost(payload.data))
+      .catch((reason) => setError(errText(reason)))
+      .finally(() => setLoading(false))
     requestAnimationFrame(() => setVisible(true))
     return () => setVisible(false)
   }, [open, postId])
@@ -36,6 +111,11 @@ export function CommentSheet({
     })
   }
 
+  const pickReply = (target: ReplyTarget) => {
+    setReplyTo(target)
+    requestAnimationFrame(() => inputRef.current?.focus())
+  }
+
   if (!open) return null
 
   return (
@@ -43,28 +123,59 @@ export function CommentSheet({
       <div className={`comment-sheet${visible ? ' is-open' : ''}`} onClick={(event) => event.stopPropagation()}>
         <span className="comment-sheet-handle" aria-hidden="true" />
         <header className="comment-sheet-head">
-          <h2>نظرات</h2>
-          <button className="icon-btn" type="button" aria-label="بستن" onClick={onClose}><Icon name="back" /></button>
+          <div className="comment-sheet-title">
+            <h2>نظرات</h2>
+            {post && post.comments_count > 0 && <span className="chip chip-blue">{faCount.format(post.comments_count)}</span>}
+          </div>
+          <button className="icon-btn" type="button" aria-label="بستن" onClick={onClose}><Icon name="close" /></button>
         </header>
         <div className="comment-sheet-body">
-          {error && <div className="error">{error}</div>}
+          {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
+          {loading && !post && <ListSkel rows={4} />}
           {post?.comments?.map((comment) => (
-            <CommentRow key={comment.id} comment={comment} />
+            <IgCommentBlock key={comment.id} comment={comment} onReplyToThread={pickReply} />
           ))}
-          {post && (post.comments?.length ?? 0) === 0 && <p className="muted center">اولین نظر را بنویسید.</p>}
+          {!loading && post && (post.comments?.length ?? 0) === 0 && (
+            <div className="ig-post-empty">هنوز نظری ثبت نشده است — اولین نفر باشید.</div>
+          )}
         </div>
         <form
           className="comment-sheet-compose"
           onSubmit={(event) => {
             event.preventDefault()
-            if (!postId || !text.trim()) return
-            void api(`/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify({ body: text }) })
-              .then(() => { setText(''); reload() })
+            if (!postId || !text.trim() || busy) return
+            setBusy(true)
+            setError('')
+            void api(`/posts/${postId}/comments`, {
+              method: 'POST',
+              body: JSON.stringify(replyTo ? { body: text.trim(), parent_id: replyTo.id } : { body: text.trim() }),
+            })
+              .then(() => { setText(''); setReplyTo(null); reload() })
               .catch((reason) => setError(errText(reason)))
+              .finally(() => setBusy(false))
           }}
         >
-          <input className="input" value={text} onChange={(event) => setText(event.target.value)} placeholder="نظر..." aria-label="متن نظر" />
-          <button className="btn btn-primary" type="submit">ارسال</button>
+          {replyTo && (
+            <div className="ig-reply-strip">
+              <span>پاسخ به <b>{replyTo.name}</b></span>
+              <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
+            </div>
+          )}
+          <div className="ig-compose-row">
+            {user && <Avatar user={user} small />}
+            <div className="ig-compose-pill">
+              <MentionBox
+                inputRef={inputRef}
+                className="ig-compose-input"
+                value={text}
+                onChange={setText}
+                placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'نظر خود را بنویسید... (@ منشن)'}
+              />
+              <button className="ig-compose-send" type="submit" disabled={busy || !text.trim()} aria-label="ارسال نظر">
+                <Icon name="send" />
+              </button>
+            </div>
+          </div>
         </form>
       </div>
     </div>
@@ -72,62 +183,7 @@ export function CommentSheet({
 }
 
 export function CommentRow({ comment }: { comment: Comment }) {
-  return (
-    <div className="comment-row">
-      <Person user={comment.author} />
-      <p>{comment.body}</p>
-      {comment.replies?.map((reply) => (
-        <div key={reply.id} className="comment-reply">
-          <b>{reply.author.name}</b>
-          <p>{reply.body}</p>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-const faCount = new Intl.NumberFormat('fa-IR')
-
-type ReplyTarget = { id: number; name: string }
-
-function IgCommentBlock({
-  comment,
-  onReplyToThread,
-}: {
-  comment: Comment
-  onReplyToThread: (target: ReplyTarget) => void
-}) {
-  const thread = { id: comment.id, name: comment.author.name }
-  return (
-    <article className="ig-comment">
-      <Avatar user={comment.author} small />
-      <div className="ig-comment-body">
-        <p className="ig-comment-text">
-          <b>{comment.author.name}</b>
-          <span><MentionText text={comment.body} /></span>
-        </p>
-        <div className="ig-comment-meta">
-          {comment.created_at && <time>{when(comment.created_at)}</time>}
-          <button type="button" className="ig-reply-btn" onClick={() => onReplyToThread(thread)}>پاسخ</button>
-        </div>
-        {comment.replies?.map((reply) => (
-          <article key={reply.id} className="ig-comment ig-comment--nested">
-            <Avatar user={reply.author} small />
-            <div className="ig-comment-body">
-              <p className="ig-comment-text">
-                <b>{reply.author.name}</b>
-                <span><MentionText text={reply.body} /></span>
-              </p>
-              <div className="ig-comment-meta">
-                {reply.created_at && <time>{when(reply.created_at)}</time>}
-                <button type="button" className="ig-reply-btn" onClick={() => onReplyToThread(thread)}>پاسخ</button>
-              </div>
-            </div>
-          </article>
-        ))}
-      </div>
-    </article>
-  )
+  return <IgCommentBlock comment={comment} onReplyToThread={() => undefined} />
 }
 
 function IgPostToolbar({
@@ -135,23 +191,31 @@ function IgPostToolbar({
   saved,
   setSaved,
   onLike,
+  onRepost,
 }: {
   post: Post
   saved: boolean
   setSaved: (next: boolean) => void
   onLike: () => void
+  onRepost: () => void
 }) {
   return (
     <section className="ig-post-toolbar">
       <div className="ig-post-actions">
         <button className={post.reacted ? 'ig-act like is-on' : 'ig-act like'} type="button" onClick={onLike} aria-pressed={post.reacted}>
-          <Icon name="heart" />
+          <Icon name="heart" filled={post.reacted} />
+          {post.reactions_count > 0 && <span>{faCount.format(post.reactions_count)}</span>}
         </button>
         <button className="ig-act" type="button" onClick={() => document.getElementById('comments')?.scrollIntoView({ behavior: 'smooth' })} aria-label="نظرات">
-          <Icon name="comment" />
+          <Icon name="comment" filled={false} />
+          {post.comments_count > 0 && <span>{faCount.format(post.comments_count)}</span>}
+        </button>
+        <button className="ig-act" type="button" onClick={onRepost} aria-label="بازنشر">
+          <Icon name="repost" />
+          {post.reposts_count > 0 && <span>{faCount.format(post.reposts_count)}</span>}
         </button>
         <button
-          className="ig-act"
+          className={saved ? 'ig-act bookmark is-on' : 'ig-act bookmark'}
           type="button"
           aria-label="ذخیره"
           aria-pressed={saved}
@@ -160,10 +224,9 @@ function IgPostToolbar({
             void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
           }}
         >
-          <Icon name="bookmark" />
+          <Icon name="bookmark" filled={saved} />
         </button>
       </div>
-      {post.reactions_count > 0 && <p className="ig-post-likes">{faCount.format(post.reactions_count)} پسند</p>}
       {post.body && (
         <p className="ig-post-caption">
           <b>{post.author.name}</b> <MentionText text={post.body} />
@@ -184,6 +247,7 @@ export function InstagramPostDetail({
   onChange: (post: Post) => void
   onRemove?: () => void
 }) {
+  const { user } = useAuth()
   const [saved, setSaved] = useState(post.bookmarked)
   useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
   const [text, setText] = useState('')
@@ -201,6 +265,11 @@ export function InstagramPostDetail({
     void api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' }).then((payload) => onChange(payload.data))
   }
 
+  const repost = () => {
+    void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) })
+      .then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))
+  }
+
   const pickReply = (target: ReplyTarget) => {
     setReplyTo(target)
     requestAnimationFrame(() => inputRef.current?.focus())
@@ -208,22 +277,27 @@ export function InstagramPostDetail({
 
   return (
     <article className="ig-post" aria-label="جزئیات پست">
-      <header className="ig-author">
-        <Person user={post.author} />
-        <PostOwnerActions post={post} onChange={onChange} onRemove={onRemove} />
-      </header>
-      {hasMedia && <MediaCarousel post={post} className="ig-post-media" />}
-      <IgPostToolbar post={post} saved={saved} setSaved={setSaved} onLike={toggleLike} />
-      <div className="ig-post-feed" id="comments">
-        {post.comments_count > 0 && (
-          <p className="ig-post-count">{faCount.format(post.comments_count)} نظر</p>
-        )}
-        {post.comments?.map((comment) => (
-          <IgCommentBlock key={comment.id} comment={comment} onReplyToThread={pickReply} />
-        ))}
-        {(post.comments?.length ?? 0) === 0 && (
-          <p className="muted ig-post-empty">هنوز نظری نیست — اولین نفر باشید.</p>
-        )}
+      <div className="ig-post-scroll">
+        <header className="ig-author">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+            <Person user={post.author} />
+            <VerifiedSeal user={post.author} />
+          </div>
+          <PostOwnerActions post={post} onChange={onChange} onRemove={onRemove} />
+        </header>
+        {hasMedia && <MediaCarousel post={post} className="ig-post-media" />}
+        <IgPostToolbar post={post} saved={saved} setSaved={setSaved} onLike={toggleLike} onRepost={repost} />
+        <div className="ig-post-feed" id="comments">
+          {post.comments_count > 0 && (
+            <p className="ig-post-count">{faCount.format(post.comments_count)} نظر</p>
+          )}
+          {post.comments?.map((comment) => (
+            <IgCommentBlock key={comment.id} comment={comment} onReplyToThread={pickReply} />
+          ))}
+          {(post.comments?.length ?? 0) === 0 && (
+            <div className="ig-post-empty">هنوز نظری نیست — اولین نفر باشید.</div>
+          )}
+        </div>
       </div>
       {replyTo && (
         <div className="ig-reply-strip">
@@ -253,14 +327,19 @@ export function InstagramPostDetail({
       >
         {error && <div className="error ig-compose-error">{error}</div>}
         <div className="ig-compose-row">
-          <MentionBox
-            inputRef={inputRef}
-            className="ig-compose-input"
-            value={text}
-            onChange={setText}
-            placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'افزودن نظر... برای منشن @ بنویسید'}
-          />
-          <button className="ig-compose-send" type="submit" disabled={busy || !text.trim()}>ارسال</button>
+          {user && <Avatar user={user} small />}
+          <div className="ig-compose-pill">
+            <MentionBox
+              inputRef={inputRef}
+              className="ig-compose-input"
+              value={text}
+              onChange={setText}
+              placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'افزودن نظر... برای منشن @ بنویسید'}
+            />
+            <button className="ig-compose-send" type="submit" disabled={busy || !text.trim()} aria-label="ارسال نظر">
+              <Icon name="send" />
+            </button>
+          </div>
         </div>
       </form>
     </article>
@@ -281,12 +360,17 @@ export function PostGrid({
     <div className={`post-grid post-grid--${aspect}`} role="list">
       {posts.map((post, index) => {
         const cover = postCover(post)
-        const label = post.body?.slice(0, 48) || post.link_title || 'پست'
+        const label = post.body?.slice(0, 72) || post.link_title || 'پست'
         const inner = (
           <>
             {cover
               ? <img src={cover} alt="" loading="lazy" decoding="async" />
-              : <span className="post-grid-text">{label}</span>}
+              : (
+                <span className="post-grid-text">
+                  <span className="post-grid-text-quote">{label}</span>
+                  <span className="post-grid-text-meta">{post.author.specialty_title || post.author.name}</span>
+                </span>
+              )}
             {post.media.length > 1 && <span className="post-grid-stack" aria-hidden="true">❐</span>}
             {post.type === 'repost' && <span className="post-grid-badge" aria-hidden="true"><Icon name="repost" /></span>}
             {post.media[0]?.kind === 'video' && <span className="post-grid-badge video" aria-hidden="true">▶</span>}

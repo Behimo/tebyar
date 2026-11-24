@@ -7,8 +7,7 @@ function localLanIp(): string | undefined {
   for (const interfaces of Object.values(networkInterfaces())) {
     if (!interfaces) continue
     for (const iface of interfaces) {
-      const family = iface.family
-      const isV4 = family === 'IPv4' || family === 4
+      const isV4 = String(iface.family) === 'IPv4'
       if (isV4 && !iface.internal) return iface.address
     }
   }

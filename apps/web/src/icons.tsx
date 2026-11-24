@@ -25,14 +25,24 @@ const paths: Record<string, ReactNode> = {
   camera: <><path d="M4 8h4l2-2h4l2 2h4v12H4z" /><circle cx="12" cy="13" r="3.2" /></>,
   trash: <><path d="M4 7h16" /><path d="M9 7V5h6v2" /><path d="M7 7l1 13h8l1-13" /></>,
   link: <><path d="M10 13a4 4 0 0 0 5.7.3l2.5-2.5a4 4 0 0 0-5.7-5.7l-1.2 1.2" /><path d="M14 11a4 4 0 0 0-5.7-.3L5.8 13.2a4 4 0 0 0 5.7 5.7l1.2-1.2" /></>,
+  close: <path d="M18 6 6 18M6 6l12 12" />,
+  verified: <><path d="M12 2.5 14.7 4l3-.2 1.1 2.8 2.5 1.7-.5 3 1.2 2.8-2 2.2.2 3-2.9.8-1.6 2.5-3-.6-2.7 1.3-2.7-1.3-3 .6-1.6-2.5-2.9-.8.2-3-2-2.2 1.2-2.8-.5-3 2.5-1.7L6.3 3.8l3 .2z" /><path d="m9.2 12.2 2 2 3.8-4" fill="none" stroke="#fff" strokeWidth="2" /></>,
+  mapPin: <><path d="M12 21s-6-5.2-6-10a6 6 0 1 1 12 0c0 4.8-6 10-6 10z" /><circle cx="12" cy="11" r="2.2" /></>,
+  award: <><circle cx="12" cy="8.5" r="5" /><path d="M8.5 12.5 7 21l5-2.5L17 21l-1.5-8.5" /></>,
+  book: <><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" /><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" /></>,
+  graduation: <><path d="m2 10 10-5 10 5-10 5z" /><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5" /></>,
+  chevronLeft: <path d="m15 6-6 6 6 6" />,
+  chevronRight: <path d="m9 6 6 6-6 6" />,
+  external: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>,
 }
 
-const filled = new Set(['heart', 'comment', 'bookmark', 'more'])
+const alwaysFilled = new Set(['more', 'verified'])
 
-export function Icon({ name }: { name: keyof typeof paths | string }) {
+export function Icon({ name, filled }: { name: keyof typeof paths | string; filled?: boolean }) {
   const body = paths[name]
+  const isFilled = filled ?? alwaysFilled.has(name)
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24" fill={filled.has(name) ? 'currentColor' : 'none'} stroke={filled.has(name) ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2 : 1.75} strokeLinecap="round" strokeLinejoin="round">
+    <svg aria-hidden="true" viewBox="0 0 24 24" fill={isFilled ? 'currentColor' : 'none'} stroke={isFilled ? 'none' : 'currentColor'} strokeWidth={name === 'plus' ? 2.1 : 1.8} strokeLinecap="round" strokeLinejoin="round">
       {body}
     </svg>
   )

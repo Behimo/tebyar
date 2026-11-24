@@ -4,8 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { api, assetUrl } from '../api'
 import { useAuth } from '../auth'
 import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
-import { Badges, Empty, ListSkel, MentionBox, Person, PostCard, Sheet, Skel, Top, errText } from '../ui'
-import { ComposeMediaField as ComposeMediaPicker, InstagramPostDetail } from '../post-ui'
+import { Avatar, Badges, Empty, ListSkel, MentionBox, Person, PostCard, Sheet, Skel, Top, VerifiedSeal, errText } from '../ui'
+import { ComposeMediaField as ComposeMediaPicker, CommentSheet, InstagramPostDetail } from '../post-ui'
 import { Brand, Icon } from '../icons'
 import { readCache, writeCache } from '../cache'
 import { buildStoryTiles, mergeStoryLists, myStories } from '../stories'
@@ -56,12 +56,23 @@ function useInboxBadges() {
   const [messages, setMessages] = useState(0)
   const [notices, setNotices] = useState(0)
   useEffect(() => {
-    void api<{ data: Conversation[] }>('/conversations')
-      .then((payload) => setMessages(payload.data.filter((item) => item.unread).length))
-      .catch(() => undefined)
-    void api<{ data: Notice[] }>('/notifications')
-      .then((payload) => setNotices(payload.data.filter((item) => !item.read_at).length))
-      .catch(() => undefined)
+    const timer = window.setTimeout(() => {
+      const cachedConvs = readCache<Conversation[]>('tebyar-conversations')
+      if (cachedConvs) {
+        setMessages(cachedConvs.filter((item) => item.unread).length)
+      } else {
+        void api<{ data: Conversation[] }>('/conversations')
+          .then((payload) => {
+            writeCache('tebyar-conversations', payload.data)
+            setMessages(payload.data.filter((item) => item.unread).length)
+          })
+          .catch(() => undefined)
+      }
+      void api<{ data: Notice[] }>('/notifications')
+        .then((payload) => setNotices(payload.data.filter((item) => !item.read_at).length))
+        .catch(() => undefined)
+    }, 600)
+    return () => window.clearTimeout(timer)
   }, [])
   return { messages, notices }
 }
@@ -89,10 +100,13 @@ function StoryReel({
   }, [startGroup, start, groups])
   const [note, setNote] = useState('')
   const [menu, setMenu] = useState(false)
+  const [paused, setPaused] = useState(false)
   const items = groups[group] ?? []
   const story = items[index]
 
   const go = (dir: 1 | -1) => {
+    setNote('')
+    setMenu(false)
     const next = index + dir
     if (next >= 0 && next < items.length) {
       setIndex(next)
@@ -114,9 +128,10 @@ function StoryReel({
   }, [story?.id])
 
   useEffect(() => {
+    if (menu || paused) return
     const timer = window.setTimeout(() => go(1), 5000)
     return () => window.clearTimeout(timer)
-  }, [index, group])
+  }, [index, group, menu, paused])
 
   useEffect(() => {
     document.body.dataset.cover = 'story'
@@ -124,8 +139,16 @@ function StoryReel({
   }, [])
 
   if (!story) return null
+  const authorHref = !story.author.anonymous && story.author.slug
+    ? (story.author.is_self ? '/profile' : `/doctors/${story.author.slug}`)
+    : null
   return createPortal(
-    <div className="story-viewer is-open">
+    <div
+      className={`story-viewer is-open${paused ? ' is-paused' : ''}`}
+      onPointerDown={() => setPaused(true)}
+      onPointerUp={() => setPaused(false)}
+      onPointerCancel={() => setPaused(false)}
+    >
       <div className="progress">
         {items.map((item, i) => (
           <span key={item.id || i} className={i === index ? 'active' : i < index ? 'done' : ''}>
@@ -133,15 +156,26 @@ function StoryReel({
           </span>
         ))}
       </div>
-      <div className="who">
-        <b>{story.author.name}</b>
+      <div className="who" onPointerDown={(e) => e.stopPropagation()}>
+        {authorHref ? (
+          <Link className="story-who-user" to={authorHref} onClick={onClose}>
+            <Avatar user={story.author} small />
+            <span>{story.author.name}</span>
+            <VerifiedSeal user={story.author} />
+          </Link>
+        ) : (
+          <div className="story-who-user">
+            <Avatar user={story.author} small />
+            <span>{story.author.name}</span>
+          </div>
+        )}
         <span className="story-who-actions">
           {story.mine && story.id > 0 && (
             <button className="icon-btn" type="button" aria-label="گزینه‌های استوری" onClick={(event) => { event.stopPropagation(); setMenu(true) }}>
               <Icon name="more" />
             </button>
           )}
-          <button className="icon-btn" type="button" onClick={onClose} aria-label="بستن"><Icon name="back" /></button>
+          <button className="icon-btn" type="button" onClick={onClose} aria-label="بستن"><Icon name="close" /></button>
         </span>
       </div>
       {note && <p className="story-note">{note}</p>}
@@ -180,6 +214,7 @@ export function Home() {
   const [storyUploading, setStoryUploading] = useState(false)
   const [storyPreview, setStoryPreview] = useState<string | null>(null)
   const [storyDraft, setStoryDraft] = useState<File | null>(null)
+  const [commentId, setCommentId] = useState<number | null>(null)
   const { user } = useAuth()
   const badges = useInboxBadges()
   const mine = myStories(stories, user)
@@ -244,6 +279,8 @@ export function Home() {
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
     } catch {
+      URL.revokeObjectURL(preview)
+      setStoryPreview(null)
       setError('آپلود استوری ناموفق بود.')
     } finally {
       setStoryUploading(false)
@@ -291,7 +328,7 @@ export function Home() {
           <div className={`story story-own${ownCover ? ' has-story' : ''}${mineUnseen ? ' is-unseen' : ownCover ? ' is-seen' : ''}${storyUploading ? ' is-uploading' : ''}`}>
             {ownCover ? (
               <button className="story-tile" type="button" onClick={() => openReel(user?.id ?? null, 0)}>
-                <img src={ownCover} alt="" />
+                <img src={ownCover} alt="" /><span className="caption">شما</span>
               </button>
             ) : (
               <label className="story-tile">
@@ -331,9 +368,9 @@ export function Home() {
             </button>
           ))}
         </div>
-        <div className="filters pad">
-          <button className={tab === 'following' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('following')}>دنبال‌شوندگان</button>
-          <button className={tab === 'suggested' ? 'filter-chip is-on' : 'filter-chip'} type="button" onClick={() => setTab('suggested')}>برای شما</button>
+        <div className="filter-seg" role="tablist" aria-label="فیلتر فید">
+          <button className={tab === 'suggested' ? 'filter-seg-btn is-on' : 'filter-seg-btn'} type="button" role="tab" aria-selected={tab === 'suggested'} onClick={() => setTab('suggested')}>برای شما</button>
+          <button className={tab === 'following' ? 'filter-seg-btn is-on' : 'filter-seg-btn'} type="button" role="tab" aria-selected={tab === 'following'} onClick={() => setTab('following')}>دنبال‌شوندگان</button>
         </div>
         {loading && posts.length === 0 && <Skel />}
         {error && <div className="banner banner-danger">{error}</div>}
@@ -344,6 +381,7 @@ export function Home() {
               key={post.id}
               post={post}
               variant={tab === 'following' ? 'following' : 'featured'}
+              onComment={() => setCommentId(post.id)}
               onChange={(next) => setPosts((list) => list.map((item) => item.id === next.id ? next : item))}
               onRemove={() => {
                 feedGen.current += 1
@@ -396,6 +434,16 @@ export function Home() {
           }}
         />
       )}
+      <CommentSheet
+        postId={commentId}
+        open={commentId != null}
+        onClose={() => setCommentId(null)}
+        onChange={(next) => setPosts((list) => {
+          const updated = list.map((item) => item.id === next.id ? next : item)
+          writePosts(tab, updated)
+          return updated
+        })}
+      />
     </>
   )
 }

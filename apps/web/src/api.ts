@@ -21,8 +21,13 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     headers.set('Content-Type', 'application/json')
   }
 
-  return fetch(`${base}/api/v1${path}`, { ...init, headers })
+  const controller = new AbortController()
+  const timeoutMs = init.body instanceof FormData ? 60000 : 15000
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+
+  return fetch(`${base}/api/v1${path}`, { ...init, headers, signal: init.signal ?? controller.signal })
     .then(async (response) => {
+      window.clearTimeout(timer)
       const text = await response.text()
       let data: { message?: string; errors?: Record<string, string[]> } | null = null
       if (text) {
@@ -43,7 +48,11 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
       return data as T
     })
     .catch((reason) => {
+      window.clearTimeout(timer)
       if (reason instanceof ApiError) throw reason
+      if (reason instanceof DOMException && reason.name === 'AbortError') {
+        throw new ApiError('پاسخ سرور بیش از حد طول کشید. لطفاً دوباره تلاش کنید.', 408)
+      }
       throw new ApiError(
         'اتصال به سرور برقرار نشد. Vite و php artisan serve هر دو باید روشن باشند.',
         0,
