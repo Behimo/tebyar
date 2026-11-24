@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Api;
 use App\Http\Controllers\Controller;
 use App\Models\ProfileEntry;
 use App\Models\User;
+use App\Services\Alerts;
 use App\Services\VerificationService;
 use App\Support\MediaStore;
 use App\Support\Membership;
@@ -34,6 +35,9 @@ class ProfileController extends Controller
             'city' => ['nullable', 'string', 'max:80'],
             'specialty_title' => ['nullable', 'string', 'max:120'],
             'privacy_dm' => ['sometimes', Rule::in(['everyone', 'following', 'none'])],
+            'privacy_mentions' => ['sometimes', Rule::in(['everyone', 'following', 'none'])],
+            'show_read_receipts' => ['sometimes', 'boolean'],
+            'open_to_work' => ['sometimes', 'boolean'],
             'notify_interactions' => ['sometimes', 'boolean'],
             'notify_messages' => ['sometimes', 'boolean'],
         ]);
@@ -184,7 +188,7 @@ class ProfileController extends Controller
         }
 
         $viewer->following()->syncWithoutDetaching([$user->id]);
-        \App\Services\Alerts::send($user, 'follow', 'دنبال‌کننده جدید', $viewer->name.' شما را دنبال کرد.', '/doctors/'.$viewer->slug);
+        Alerts::send($user, 'follow', 'دنبال‌کننده جدید', $viewer->name.' شما را دنبال کرد.', '/doctors/'.$viewer->slug);
 
         return response()->json(['data' => Present::user($user->loadCount(['followers', 'following', 'posts']), $viewer, true)]);
     }
@@ -194,6 +198,38 @@ class ProfileController extends Controller
         $request->user()->following()->detach($user->id);
 
         return response()->json(['data' => Present::user($user->loadCount(['followers', 'following', 'posts']), $request->user(), true)]);
+    }
+
+    public function followers(Request $request, User $user): JsonResponse
+    {
+        $viewer = $request->user();
+        $hidden = Present::hiddenIds($viewer);
+        $list = $user->followers()
+            ->where('account_status', 'verified')
+            ->when($hidden !== [], fn ($q) => $q->whereNotIn('users.id', $hidden))
+            ->orderBy('name')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'data' => $list->map(fn (User $person) => Present::user($person, $viewer))->values(),
+        ]);
+    }
+
+    public function following(Request $request, User $user): JsonResponse
+    {
+        $viewer = $request->user();
+        $hidden = Present::hiddenIds($viewer);
+        $list = $user->following()
+            ->where('account_status', 'verified')
+            ->when($hidden !== [], fn ($q) => $q->whereNotIn('users.id', $hidden))
+            ->orderBy('name')
+            ->limit(100)
+            ->get();
+
+        return response()->json([
+            'data' => $list->map(fn (User $person) => Present::user($person, $viewer))->values(),
+        ]);
     }
 
     public function storeEntry(Request $request): JsonResponse

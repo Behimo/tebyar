@@ -17,6 +17,8 @@ Route::prefix('v1')->group(function () {
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::post('auth/logout', [AuthController::class, 'logout']);
+        Route::get('me/sessions', [AuthController::class, 'sessions']);
+        Route::delete('me/sessions/{tokenId}', [AuthController::class, 'revokeSession']);
         Route::get('me', [ProfileController::class, 'me']);
         Route::get('me/verification', [ProfileController::class, 'verification']);
         Route::post('me/onboarding', [ProfileController::class, 'onboarding']);
@@ -59,6 +61,8 @@ Route::prefix('v1')->group(function () {
             Route::post('topics/{topic}/vote', [CommunityController::class, 'vote']);
 
             Route::get('doctors/{slug}', [ProfileController::class, 'show']);
+            Route::get('doctors/{user}/followers', [ProfileController::class, 'followers']);
+            Route::get('doctors/{user}/following', [ProfileController::class, 'following']);
             Route::post('doctors/{user}/follow', [ProfileController::class, 'follow']);
             Route::delete('doctors/{user}/follow', [ProfileController::class, 'unfollow']);
             Route::get('search', [InboxController::class, 'search']);

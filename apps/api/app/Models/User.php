@@ -20,7 +20,8 @@ use Laravel\Sanctum\HasApiTokens;
     'name', 'email', 'password', 'phone', 'role', 'account_status', 'staff_role',
     'slug', 'specialty_title', 'headline', 'bio', 'city', 'avatar_path',
     'education_verified_at', 'identity_verified_at', 'license_verified_at', 'specialty_verified_at',
-    'privacy_dm', 'notify_interactions', 'notify_messages', 'is_demo',
+    'privacy_dm', 'privacy_mentions', 'show_read_receipts', 'open_to_work',
+    'notify_interactions', 'notify_messages', 'is_demo',
 ])]
 #[Hidden(['password', 'remember_token', 'phone'])]
 class User extends Authenticatable implements FilamentUser
@@ -39,6 +40,8 @@ class User extends Authenticatable implements FilamentUser
             'specialty_verified_at' => 'datetime',
             'notify_interactions' => 'boolean',
             'notify_messages' => 'boolean',
+            'show_read_receipts' => 'boolean',
+            'open_to_work' => 'boolean',
             'is_demo' => 'boolean',
         ];
     }

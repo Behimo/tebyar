@@ -31,6 +31,9 @@ export function Messages() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(() => readCache<Conversation[]>(conversationsKey) == null)
   const [query, setQuery] = useState('')
+  const [dmOpen, setDmOpen] = useState(false)
+  const [dmQuery, setDmQuery] = useState('')
+  const [dmHits, setDmHits] = useState<UserCard[]>([])
   const [groupOpen, setGroupOpen] = useState(false)
   const [groupTitle, setGroupTitle] = useState('')
   const [memberQuery, setMemberQuery] = useState('')
@@ -58,6 +61,23 @@ export function Messages() {
   }, [user?.id])
 
   useEffect(() => {
+    if (!dmOpen) return
+    const timer = window.setTimeout(() => {
+      const q = dmQuery.trim()
+      if (q) {
+        void api<{ doctors: UserCard[] }>(`/search?q=${encodeURIComponent(q)}`)
+          .then((payload) => setDmHits(payload.doctors.filter((d) => d.id !== user?.id)))
+          .catch(() => setDmHits([]))
+      } else {
+        void api<{ data: UserCard[] }>('/connections')
+          .then((payload) => setDmHits(payload.data))
+          .catch(() => setDmHits([]))
+      }
+    }, 180)
+    return () => window.clearTimeout(timer)
+  }, [dmOpen, dmQuery, user?.id])
+
+  useEffect(() => {
     if (!groupOpen) return
     const timer = window.setTimeout(() => {
       const q = memberQuery.trim()
@@ -83,10 +103,16 @@ export function Messages() {
     <>
       <Top
         title="پیام‌ها"
+        back
         action={(
-          <button className="icon-btn" type="button" aria-label="گروه جدید" onClick={() => setGroupOpen(true)}>
-            <Icon name="users" />
-          </button>
+          <>
+            <button className="icon-btn" type="button" aria-label="پیام جدید" onClick={() => setDmOpen(true)}>
+              <Icon name="edit" />
+            </button>
+            <button className="icon-btn" type="button" aria-label="گروه جدید" onClick={() => setGroupOpen(true)}>
+              <Icon name="users" />
+            </button>
+          </>
         )}
       />
       <div className="screen-body pad messages-list">
@@ -119,6 +145,42 @@ export function Messages() {
           </button>
         ))}
       </div>
+      {dmOpen && (
+        <Sheet onClose={() => setDmOpen(false)}>
+          <div className="stack">
+            <h2>پیام شخصی جدید</h2>
+            <input className="input" value={dmQuery} onChange={(event) => setDmQuery(event.target.value)} placeholder="جست‌وجوی نام، تخصص یا شهر همکار..." autoFocus />
+            {dmHits.length === 0 && <p className="muted">همکاری پیدا نشد. نام همکار را جست‌وجو کنید.</p>}
+            {dmHits.map((doctor) => (
+              <button
+                key={doctor.id}
+                className="list-row"
+                type="button"
+                onClick={() => {
+                  if (!doctor.id) return
+                  void api<{ data: Conversation }>('/conversations', {
+                    method: 'POST',
+                    body: JSON.stringify({ user_id: doctor.id }),
+                  }).then((payload) => {
+                    setDmOpen(false)
+                    setDmQuery('')
+                    navigate(`/messages/${payload.data.id}`)
+                  }).catch((reason) => {
+                    setDmOpen(false)
+                    setError(errText(reason))
+                  })
+                }}
+              >
+                <Avatar user={doctor} />
+                <div className="body">
+                  <div className="title">{doctor.name}</div>
+                  <div className="sub">{doctor.specialty_title || doctor.role_label}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
       {groupOpen && (
         <Sheet onClose={() => setGroupOpen(false)}>
           <div className="stack">
@@ -433,9 +495,25 @@ function ProfileLayout({
   actions: ReactNode
   children: ReactNode
 }) {
+  const navigate = useNavigate()
   const [aboutOpen, setAboutOpen] = useState(false)
+  const [followModal, setFollowModal] = useState<'followers' | 'following' | null>(null)
+  const [followList, setFollowList] = useState<UserCard[]>([])
+  const [followLoading, setFollowLoading] = useState(false)
   const roleOrSpec = user.specialty_title || user.role_label
   const hasEntries = (user.entries?.length ?? 0) > 0
+
+  const openFollowList = (kind: 'followers' | 'following') => {
+    if (!user.id) return
+    setFollowModal(kind)
+    setFollowLoading(true)
+    setFollowList([])
+    void api<{ data: UserCard[] }>(`/doctors/${user.id}/${kind}`)
+      .then((payload) => setFollowList(payload.data))
+      .catch(() => setFollowList([]))
+      .finally(() => setFollowLoading(false))
+  }
+
   return (
     <div className="profile-layout">
       <header className="profile-hero-card">
@@ -457,6 +535,9 @@ function ProfileLayout({
             </p>
           )}
           <div className="profile-badges-row">
+            {user.open_to_work && (
+              <span className="chip chip-teal"><Icon name="briefcase" /> آماده همکاری</span>
+            )}
             {user.specialty_title && (
               <span className={user.badges.specialty ? 'chip chip-teal' : 'chip chip-blue'}>
                 {user.badges.specialty && <Icon name="check" />}
@@ -470,8 +551,12 @@ function ProfileLayout({
           {user.bio && <p className="profile-bio">{user.bio}</p>}
           <div className="profile-stats-bar">
             <div><b>{faCount.format(user.posts_count)}</b><span>پست</span></div>
-            <div><b>{faCount.format(user.followers_count)}</b><span>دنبال‌کننده</span></div>
-            <div><b>{faCount.format(user.following_count)}</b><span>دنبال‌شده</span></div>
+            <button type="button" className="profile-stat-btn" onClick={() => openFollowList('followers')}>
+              <b>{faCount.format(user.followers_count)}</b><span>دنبال‌کننده</span>
+            </button>
+            <button type="button" className="profile-stat-btn" onClick={() => openFollowList('following')}>
+              <b>{faCount.format(user.following_count)}</b><span>دنبال‌شده</span>
+            </button>
           </div>
           <div className="profile-actions">{actions}</div>
           <button
@@ -491,6 +576,35 @@ function ProfileLayout({
         </div>
       </header>
       {children}
+      {followModal && (
+        <Sheet onClose={() => setFollowModal(null)}>
+          <div className="stack">
+            <h2>{followModal === 'followers' ? 'دنبال‌کنندگان' : 'دنبال‌شده‌ها'}</h2>
+            {followLoading && <ListSkel rows={4} />}
+            {!followLoading && followList.length === 0 && (
+              <p className="muted">فهرست خالی است.</p>
+            )}
+            {followList.map((person) => (
+              <button
+                key={person.id}
+                className="list-row"
+                type="button"
+                onClick={() => {
+                  setFollowModal(null)
+                  if (person.is_self) navigate('/profile')
+                  else if (person.slug) navigate(`/doctors/${person.slug}`)
+                }}
+              >
+                <Avatar user={person} />
+                <div className="body">
+                  <div className="title">{person.name}</div>
+                  <div className="sub">{person.specialty_title || person.role_label}</div>
+                </div>
+              </button>
+            ))}
+          </div>
+        </Sheet>
+      )}
     </div>
   )
 }
@@ -520,6 +634,7 @@ export function Profile() {
           actions={(
             <>
               <Link className="btn btn-ghost" to="/profile/edit"><Icon name="edit" /> ویرایش</Link>
+              <Link className="btn btn-ghost" to="/messages"><Icon name="chat" /> پیام‌ها</Link>
               <Link className="btn btn-primary" to="/settings"><Icon name="settings" /> تنظیمات</Link>
             </>
           )}
@@ -537,6 +652,8 @@ export function DoctorPage() {
   const [user, setUser] = useState<UserCard | null>(null)
   const [payload, setPayload] = useState<ProfilePayload>({ posts: [], reposts: [], topics: [], communities: [] })
   const [error, setError] = useState('')
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [notice, setNotice] = useState('')
 
   const load = () => {
     api<ProfilePayload & { data: UserCard }>(`/doctors/${slug}`)
@@ -555,9 +672,18 @@ export function DoctorPage() {
 
   return (
     <>
-      <Top title={user?.name || 'پروفایل'} back />
+      <Top
+        title={user?.name || 'پروفایل'}
+        back
+        action={user && !user.is_self && user.id ? (
+          <button className="icon-btn" type="button" aria-label="گزینه‌های پروفایل" onClick={() => setMenuOpen(true)}>
+            <Icon name="more" />
+          </button>
+        ) : undefined}
+      />
       <div className="screen-body profile-screen">
         {error && <div className="error pad">{error}</div>}
+        {notice && <div className="banner banner-info" style={{ margin: '10px 14px 0' }}>{notice}</div>}
         {!user && !error && <div className="pad"><ListSkel rows={5} /></div>}
         {user && (
           <ProfileLayout
@@ -569,11 +695,16 @@ export function DoctorPage() {
                 </button>
                 {user.id && (
                   <button
-                    className="btn btn-ghost"
+                    className="btn btn-primary"
                     type="button"
-                    onClick={() => void api<{ data: Conversation }>('/conversations', { method: 'POST', body: JSON.stringify({ user_id: user.id }) }).then((row) => navigate(`/messages/${row.data.id}`)).catch((reason) => setError(errText(reason)))}
+                    onClick={() => {
+                      setError('')
+                      void api<{ data: Conversation }>('/conversations', { method: 'POST', body: JSON.stringify({ user_id: user.id }) })
+                        .then((row) => navigate(`/messages/${row.data.id}`))
+                        .catch((reason) => setError(errText(reason)))
+                    }}
                   >
-                    <Icon name="chat" /> پیام
+                    <Icon name="chat" /> پیام شخصی
                   </button>
                 )}
               </>
@@ -583,6 +714,37 @@ export function DoctorPage() {
           </ProfileLayout>
         )}
       </div>
+      {menuOpen && user?.id && (
+        <Sheet onClose={() => setMenuOpen(false)}>
+          <div className="stack">
+            <button
+              className="sheet-item"
+              type="button"
+              onClick={() => {
+                setMenuOpen(false)
+                void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'user', id: user.id, reason: 'other' }) })
+                  .then(() => setNotice('گزارش کاربر برای بررسی ثبت شد.'))
+                  .catch((reason) => setError(errText(reason)))
+              }}
+            >
+              گزارش کاربر
+            </button>
+            <button
+              className="sheet-item danger"
+              type="button"
+              onClick={() => {
+                if (!window.confirm(`${user.name} مسدود شود؟`)) return
+                setMenuOpen(false)
+                void api('/blocks', { method: 'POST', body: JSON.stringify({ user_id: user.id }) })
+                  .then(() => navigate(-1))
+                  .catch((reason) => setError(errText(reason)))
+              }}
+            >
+              مسدود کردن کاربر
+            </button>
+          </div>
+        </Sheet>
+      )}
     </>
   )
 }
@@ -682,6 +844,30 @@ export function EditProfile() {
           <input className="input" name="year" placeholder="سال" />
           <button className="btn btn-ghost btn-block" type="submit">افزودن</button>
         </form>
+        {(user.entries?.length ?? 0) > 0 && (
+          <div className="stack" style={{ marginTop: 18 }}>
+            <h2 className="section-title" style={{ padding: 0 }}>سوابق ثبت‌شده</h2>
+            {user.entries?.map((entry) => (
+              <div key={entry.id} className="card pad-in row between" style={{ alignItems: 'center', gap: 10 }}>
+                <div style={{ minWidth: 0 }}>
+                  <div className="muted" style={{ fontSize: 11 }}>{entryLabels[entry.kind] || entry.kind}</div>
+                  <b>{entry.title}</b>
+                  {(entry.subtitle || entry.year) && (
+                    <div className="muted" style={{ fontSize: 12 }}>{[entry.subtitle, entry.year].filter(Boolean).join(' · ')}</div>
+                  )}
+                </div>
+                <button
+                  className="icon-btn"
+                  type="button"
+                  aria-label="حذف سابقه"
+                  onClick={() => void api(`/me/entries/${entry.id}`, { method: 'DELETE' }).then(() => refresh()).catch((reason) => setError(errText(reason)))}
+                >
+                  <Icon name="trash" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </>
   )

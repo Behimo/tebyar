@@ -130,7 +130,12 @@ class CommunityController extends Controller
     {
         abort_if($topic->hidden_at, 404);
         $topic->load(['author', 'community']);
-        $replies = $topic->replies()->whereNull('hidden_at')->whereNull('parent_id')->with('author')->oldest()->get();
+        $replies = $topic->replies()
+            ->whereNull('hidden_at')
+            ->whereNull('parent_id')
+            ->with(['author', 'replies.author'])
+            ->oldest()
+            ->get();
 
         return response()->json([
             'data' => Present::topic($topic, $request->user()),
@@ -143,7 +148,11 @@ class CommunityController extends Controller
         abort_if($topic->hidden_at, 404);
         $data = $request->validate([
             'body' => ['required', 'string', 'max:4000'],
-            'parent_id' => ['nullable', 'integer'],
+            'parent_id' => [
+                'nullable',
+                'integer',
+                Rule::exists('topic_replies', 'id')->where('topic_id', $topic->id)->whereNull('hidden_at'),
+            ],
         ]);
 
         if (PatientPrivacy::containsIdentifier($data['body'])) {
@@ -162,7 +171,14 @@ class CommunityController extends Controller
             Alerts::send($topic->author, 'comment', 'پاسخ جدید در انجمن', $request->user()->name.' به موضوع شما پاسخ داد.', '/topics/'.$topic->id);
         }
 
-        $reply->load('author');
+        if ($reply->parent_id) {
+            $parentAuthor = $reply->parent?->author;
+            if ($parentAuthor && $parentAuthor->id !== $request->user()->id && $parentAuthor->id !== $topic->user_id) {
+                Alerts::send($parentAuthor, 'comment', 'پاسخ جدید در انجمن', $request->user()->name.' به پاسخ شما در انجمن جواب داد.', '/topics/'.$topic->id);
+            }
+        }
+
+        $reply->load(['author', 'replies.author']);
 
         return response()->json(['data' => Present::reply($reply, $request->user())], 201);
     }

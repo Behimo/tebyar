@@ -14,7 +14,6 @@ use App\Models\Topic;
 use App\Models\TopicReply;
 use App\Models\User;
 use App\Models\Vacancy;
-use Illuminate\Support\Facades\Storage;
 
 class Present
 {
@@ -43,6 +42,7 @@ class Present
             'is_following' => $detail && $viewer ? $viewer->following()->where('users.id', $user->id)->exists() : false,
             'is_self' => $viewer?->id === $user->id,
             'is_demo' => (bool) $user->is_demo,
+            'open_to_work' => (bool) $user->open_to_work,
             'anonymous' => false,
         ];
 
@@ -69,6 +69,9 @@ class Present
         $card['status_label'] = $user->statusLabel();
         $card['staff_role'] = $user->staff_role;
         $card['privacy_dm'] = $user->privacy_dm;
+        $card['privacy_mentions'] = $user->privacy_mentions ?? 'everyone';
+        $card['show_read_receipts'] = (bool) ($user->show_read_receipts ?? true);
+        $card['open_to_work'] = (bool) $user->open_to_work;
         $card['notify_interactions'] = $user->notify_interactions;
         $card['notify_messages'] = $user->notify_messages;
         $card['bio'] = $user->bio;
@@ -237,9 +240,19 @@ class Present
     {
         return [
             'id' => $reply->id,
+            'parent_id' => $reply->parent_id,
             'body' => $reply->body,
             'created_at' => $reply->created_at?->toIso8601String(),
             'author' => self::user($reply->author, $viewer),
+            'replies' => $reply->relationLoaded('replies')
+                ? $reply->replies->map(fn (TopicReply $child) => [
+                    'id' => $child->id,
+                    'parent_id' => $child->parent_id,
+                    'body' => $child->body,
+                    'created_at' => $child->created_at?->toIso8601String(),
+                    'author' => self::user($child->author, $viewer),
+                ])->values()
+                : [],
         ];
     }
 
@@ -322,10 +335,13 @@ class Present
                     fn ($row) => $row->last_read_at && $message->created_at->lte($row->last_read_at)
                 );
             } else {
+                $peer = $conversation->peer($viewer);
                 $peerRead = $message->sender_id === $conversation->user_one_id
                     ? $conversation->user_two_read_at
                     : $conversation->user_one_read_at;
-                $read = (bool) ($peerRead && $message->created_at->lte($peerRead));
+                $read = ($peer->show_read_receipts ?? true)
+                    && ($viewer->show_read_receipts ?? true)
+                    && (bool) ($peerRead && $message->created_at->lte($peerRead));
             }
         }
 

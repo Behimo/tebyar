@@ -65,4 +65,32 @@ class AuthController extends Controller
 
         return response()->json(['message' => 'خارج شدید.']);
     }
+
+    public function sessions(Request $request): JsonResponse
+    {
+        $currentId = $request->user()->currentAccessToken()?->id;
+        $tokens = $request->user()->tokens()->latest('last_used_at')->latest('created_at')->limit(20)->get();
+
+        return response()->json([
+            'data' => $tokens->map(fn ($token) => [
+                'id' => $token->id,
+                'name' => $token->name,
+                'current' => $token->id === $currentId,
+                'last_used_at' => $token->last_used_at?->toIso8601String(),
+                'created_at' => $token->created_at?->toIso8601String(),
+            ])->values(),
+        ]);
+    }
+
+    public function revokeSession(Request $request, int $tokenId): JsonResponse
+    {
+        $currentId = $request->user()->currentAccessToken()?->id;
+        if ($tokenId === $currentId) {
+            return response()->json(['message' => 'نشست فعلی را از گزینه خروج ببندید.'], 422);
+        }
+
+        $request->user()->tokens()->whereKey($tokenId)->delete();
+
+        return response()->json(['message' => 'نشست بسته شد.']);
+    }
 }

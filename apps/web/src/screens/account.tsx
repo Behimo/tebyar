@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { api } from '../api'
+import { api, when } from '../api'
 import { useAuth } from '../auth'
 import type { Me, Notice, Post, UserCard, Vacancy } from '../types'
 import { Empty, Person, Top, Toggle, errText } from '../ui'
@@ -227,6 +227,10 @@ export function Settings() {
   const [notifyInteractions, setNotifyInteractions] = useState(user?.notify_interactions ?? true)
   const [notifyMessages, setNotifyMessages] = useState(user?.notify_messages ?? true)
   const [privacyDm, setPrivacyDm] = useState(user?.privacy_dm ?? 'everyone')
+  const [privacyMentions, setPrivacyMentions] = useState(user?.privacy_mentions ?? 'everyone')
+  const [showReadReceipts, setShowReadReceipts] = useState(user?.show_read_receipts ?? true)
+  const [openToWork, setOpenToWork] = useState(user?.open_to_work ?? false)
+  const [sessions, setSessions] = useState<{ id: number; name: string; current: boolean; last_used_at: string | null; created_at: string | null }[]>([])
 
   const savePrivacy = (patch: Record<string, unknown>) => {
     void api('/me', { method: 'PATCH', body: JSON.stringify(patch) }).then(() => refresh())
@@ -237,12 +241,18 @@ export function Settings() {
     setNotifyInteractions(user.notify_interactions)
     setNotifyMessages(user.notify_messages)
     setPrivacyDm(user.privacy_dm)
+    setPrivacyMentions(user.privacy_mentions ?? 'everyone')
+    setShowReadReceipts(user.show_read_receipts ?? true)
+    setOpenToWork(user.open_to_work ?? false)
   }, [user])
 
   useEffect(() => {
     api<{ data: UserCard[] }>('/blocks').then((payload) => setBlocks(payload.data)).catch(() => undefined)
     api<{ data: { id: number; subject: string; status: string; messages: { body: string }[] }[] }>('/support-tickets')
       .then((payload) => setTickets(payload.data))
+      .catch(() => undefined)
+    api<{ data: { id: number; name: string; current: boolean; last_used_at: string | null; created_at: string | null }[] }>('/me/sessions')
+      .then((payload) => setSessions(payload.data))
       .catch(() => undefined)
   }, [])
 
@@ -267,6 +277,19 @@ export function Settings() {
           </div>
         </div>
 
+        <h2 className="section-title section-title--tight">وضعیت حرفه‌ای</h2>
+        <div className="card pad-in settings-card">
+          <div className="kv">
+            <span className="k">آماده همکاری (Open to Work)</span>
+            <Toggle
+              label="آماده همکاری"
+              on={openToWork}
+              onChange={(next) => { setOpenToWork(next); savePrivacy({ open_to_work: next }) }}
+            />
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>با فعال‌سازی این گزینه، نشان «آماده همکاری» روی پروفایل شما نمایش داده می‌شود.</p>
+        </div>
+
         <h2 className="section-title section-title--tight">حریم خصوصی</h2>
         <div className="card pad-in settings-card">
           <div className="kv kv-stack">
@@ -284,6 +307,30 @@ export function Settings() {
               <option value="following">فقط دنبال‌شوندگان</option>
               <option value="none">هیچ‌کس</option>
             </select>
+          </div>
+          <div className="kv kv-stack">
+            <span className="k">چه کسانی بتوانند منشن کنند (@)</span>
+            <select
+              className="select"
+              value={privacyMentions}
+              onChange={(event) => {
+                const value = event.target.value
+                setPrivacyMentions(value)
+                savePrivacy({ privacy_mentions: value })
+              }}
+            >
+              <option value="everyone">همه اعضای تأییدشده</option>
+              <option value="following">فقط دنبال‌شوندگان</option>
+              <option value="none">هیچ‌کس</option>
+            </select>
+          </div>
+          <div className="kv">
+            <span className="k">نمایش رسید خوانده‌شدن پیام</span>
+            <Toggle
+              label="نمایش رسید خوانده‌شدن پیام"
+              on={showReadReceipts}
+              onChange={(next) => { setShowReadReceipts(next); savePrivacy({ show_read_receipts: next }) }}
+            />
           </div>
           <div className="kv">
             <span className="k">اعلان تعامل‌ها</span>
@@ -332,6 +379,32 @@ export function Settings() {
           <Link className="list-row" to="/pending">
             <div className="body"><div className="title">وضعیت احراز هویت</div><div className="sub">{user.status_label}</div></div>
           </Link>
+          {sessions.length > 0 && (
+            <div className="settings-blocks">
+              <p className="muted" style={{ fontSize: 12, margin: '8px 0' }}>نشست‌های فعال</p>
+              {sessions.map((session) => (
+                <div key={session.id} className="row between" style={{ padding: '6px 0' }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>
+                      {session.name}{session.current ? ' (دستگاه فعلی)' : ''}
+                    </div>
+                    <div className="muted" style={{ fontSize: 11 }}>
+                      {session.last_used_at ? `آخرین فعالیت: ${when(session.last_used_at)}` : session.created_at ? when(session.created_at) : ''}
+                    </div>
+                  </div>
+                  {!session.current && (
+                    <button
+                      className="text-btn"
+                      type="button"
+                      onClick={() => void api(`/me/sessions/${session.id}`, { method: 'DELETE' }).then(() => setSessions((rows) => rows.filter((row) => row.id !== session.id)))}
+                    >
+                      بستن
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
           {blocks.length > 0 && (
             <div className="settings-blocks">
               <p className="muted" style={{ fontSize: 12, margin: '8px 0' }}>مسدودشده‌ها</p>

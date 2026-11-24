@@ -32,6 +32,7 @@ export type UserCard = {
   is_following: boolean
   is_self: boolean
   is_demo: boolean
+  open_to_work?: boolean
   anonymous: boolean
   entries?: Entry[]
 }
@@ -42,6 +43,9 @@ export type Me = UserCard & {
   status_label: string
   staff_role: string | null
   privacy_dm: string
+  privacy_mentions: string
+  show_read_receipts: boolean
+  open_to_work: boolean
   notify_interactions: boolean
   notify_messages: boolean
   can_create_case: boolean
@@ -116,9 +120,11 @@ export type Topic = {
 
 export type Reply = {
   id: number
+  parent_id?: number | null
   body: string
   created_at: string | null
   author: UserCard
+  replies?: Reply[]
 }
 
 export type Conversation = {

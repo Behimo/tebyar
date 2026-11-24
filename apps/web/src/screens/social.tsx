@@ -610,7 +610,9 @@ export function TopicPage() {
   const [topic, setTopic] = useState<Topic | null>(null)
   const [replies, setReplies] = useState<Reply[]>([])
   const [text, setText] = useState('')
+  const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null)
   const [error, setError] = useState('')
+  const replyInputRef = useRef<HTMLTextAreaElement>(null)
 
   const load = () => {
     api<{ data: Topic; replies: Reply[] }>(`/topics/${id}`)
@@ -618,6 +620,11 @@ export function TopicPage() {
       .catch((reason) => setError(errText(reason)))
   }
   useEffect(load, [id])
+
+  const pickReply = (target: { id: number; name: string }) => {
+    setReplyTo(target)
+    requestAnimationFrame(() => replyInputRef.current?.focus())
+  }
 
   return (
     <>
@@ -644,17 +651,58 @@ export function TopicPage() {
             )}
           </article>
         )}
-        {replies.map((reply) => (
-          <div key={reply.id} className="card stack">
-            <Person user={reply.author} />
-            <p>{reply.body}</p>
-          </div>
-        ))}
+        {replies.map((reply) => {
+          const thread = { id: reply.id, name: reply.author.name }
+          return (
+            <div key={reply.id} className="card stack">
+              <Person user={reply.author} />
+              <p>{reply.body}</p>
+              <div className="topic-reply-actions">
+                <button type="button" className="ig-reply-btn" onClick={() => pickReply(thread)}>پاسخ</button>
+              </div>
+              {reply.replies && reply.replies.length > 0 && (
+                <div className="topic-reply-nested stack">
+                  {reply.replies.map((child) => (
+                    <div key={child.id} className="ig-comment ig-comment--nested">
+                      <div className="ig-comment-body">
+                        <div className="ig-comment-bubble">
+                          <div className="ig-comment-head">
+                            <Person user={child.author} />
+                          </div>
+                          <p className="ig-comment-text">{child.body}</p>
+                        </div>
+                        <div className="ig-comment-meta">
+                          <button type="button" className="ig-reply-btn" onClick={() => pickReply(thread)}>پاسخ</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )
+        })}
         <form className="stack" onSubmit={(event) => {
           event.preventDefault()
-          void api(`/topics/${id}/replies`, { method: 'POST', body: JSON.stringify({ body: text }) }).then(() => { setText(''); load() }).catch((reason) => setError(errText(reason)))
+          if (!text.trim()) return
+          void api(`/topics/${id}/replies`, {
+            method: 'POST',
+            body: JSON.stringify(replyTo ? { body: text.trim(), parent_id: replyTo.id } : { body: text.trim() }),
+          }).then(() => { setText(''); setReplyTo(null); load() }).catch((reason) => setError(errText(reason)))
         }}>
-          <textarea className="area" value={text} onChange={(event) => setText(event.target.value)} placeholder="پاسخ شما" />
+          {replyTo && (
+            <div className="ig-reply-strip">
+              <span>پاسخ به <b>{replyTo.name}</b></span>
+              <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
+            </div>
+          )}
+          <textarea
+            ref={replyInputRef}
+            className="area"
+            value={text}
+            onChange={(event) => setText(event.target.value)}
+            placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'پاسخ شما'}
+          />
           <button className="btn primary" type="submit">ارسال پاسخ</button>
         </form>
       </div>
