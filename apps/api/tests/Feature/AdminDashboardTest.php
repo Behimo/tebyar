@@ -71,6 +71,14 @@ class AdminDashboardTest extends TestCase
 
         $this->actingAs($admin);
 
+        $this->get('/admin/membership-settings')
+            ->assertOk()
+            ->assertSee('تنظیمات اشتراک و سقف‌های رایگان', false);
+
+        $this->get('/admin/subscriptions')
+            ->assertOk()
+            ->assertSee('اشتراک‌های پرو', false);
+
         Livewire::test(MembershipSettings::class)
             ->assertOk()
             ->set('data.free_quotas.topics', 4)

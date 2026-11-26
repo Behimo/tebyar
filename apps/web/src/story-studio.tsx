@@ -97,7 +97,7 @@ export function StoryStudio({
   const { user } = useAuth()
   const stageRef = useRef<HTMLDivElement>(null)
   const drawRef = useRef<HTMLCanvasElement>(null)
-  const [url] = useState(() => URL.createObjectURL(file))
+  const [url, setUrl] = useState('')
 
   const [mode, setMode] = useState<'idle' | 'draw' | 'text' | 'stickers'>('idle')
   const [filterIdx, setFilterIdx] = useState(0)
@@ -128,7 +128,11 @@ export function StoryStudio({
 
   useCover(true)
 
-  useEffect(() => () => URL.revokeObjectURL(url), [url])
+  useEffect(() => {
+    const objectUrl = URL.createObjectURL(file)
+    setUrl(objectUrl)
+    return () => URL.revokeObjectURL(objectUrl)
+  }, [file])
 
   const activeFilter = filters[filterIdx] ?? filters[0]
 
@@ -241,7 +245,7 @@ export function StoryStudio({
 
   const publish = async () => {
     const stage = stageRef.current
-    if (!stage) return
+    if (!stage || !url) return
     const rect = stage.getBoundingClientRect()
     const canvas = document.createElement('canvas')
     canvas.width = 1080
@@ -430,7 +434,7 @@ export function StoryStudio({
           drawing.current = null
         }}
       >
-        <img src={url} alt="" draggable={false} style={{ filter: activeFilter.css }} />
+        {url && <img src={url} alt="" draggable={false} style={{ filter: activeFilter.css }} />}
         <canvas ref={drawRef} />
 
         {captions.map((caption) => (
