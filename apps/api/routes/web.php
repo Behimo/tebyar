@@ -6,8 +6,16 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 
 Route::get('/', function () {
-    return view('welcome');
+    $spa = public_path('index.html');
+
+    return file_exists($spa) ? response()->file($spa) : view('welcome');
 });
+
+Route::get('/{path}', function () {
+    $spa = public_path('index.html');
+
+    return file_exists($spa) ? response()->file($spa) : abort(404);
+})->where('path', '^(?!api$|api/|admin$|admin/|staff/|sanctum/|broadcasting/|livewire|filament|storage/|up$).*$');
 
 Route::middleware('auth')->group(function () {
     Route::get('/staff/identity/{identity}', function (UserIdentity $identity) {
