@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { api, assetUrl } from '../api'
 import { useAuth } from '../auth'
+import { recordDetailView } from '../impressions'
+import { QuotaHint } from '../pro'
 import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
 import {
   Avatar,
@@ -229,7 +231,7 @@ export function Home() {
   const [storyPreview, setStoryPreview] = useState<string | null>(null)
   const [storyDraft, setStoryDraft] = useState<File | null>(null)
   const [commentId, setCommentId] = useState<number | null>(null)
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const badges = useInboxBadges()
   const mine = myStories(stories, user)
@@ -292,11 +294,12 @@ export function Home() {
       })
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
+      void refresh()
       toast.show('استوری منتشر شد', 'success')
-    } catch {
+    } catch (reason) {
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
-      setError('آپلود استوری ناموفق بود.')
+      toast.show(errText(reason), 'error')
     } finally {
       setStoryUploading(false)
     }
@@ -329,7 +332,7 @@ export function Home() {
         <div className="topbar-actions">
           <Link className="icon-btn" to="/explore" aria-label="اکسپلور"><Icon name="explore" /></Link>
           <Link className="icon-btn" to="/messages" aria-label="پیام‌ها">
-            <Icon name="chat" />
+            <Icon name="direct" />
             {badges.messages > 0 && <span className="badge">{badges.messages > 9 ? '۹+' : String(badges.messages)}</span>}
           </Link>
           <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها">
@@ -484,7 +487,7 @@ const MAX_POST_CHARS = 2000
 
 export function Compose() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const [body, setBody] = useState('')
   const [link, setLink] = useState('')
@@ -509,6 +512,7 @@ export function Compose() {
       slides.forEach((slide) => form.append('media[]', slide.file))
       form.set('cover_index', String(coverIndex))
       const created = await api<{ data: Post }>('/posts', { method: 'POST', body: form })
+      void refresh()
       toast.show('پست شما منتشر شد', 'success')
       navigate(`/posts/${created.data.id}`)
     } catch (reason) {
@@ -540,6 +544,7 @@ export function Compose() {
             <span className="chip chip-teal">انتشار عمومی</span>
           </div>
         )}
+        <QuotaHint quotaKey="posts" />
 
         <div className="compose-card">
           <MentionBox
@@ -612,7 +617,10 @@ export function PostPage() {
 
   useEffect(() => {
     if (!id) return
-    void api<{ data: Post }>(`/posts/${id}`).then((payload) => setPost(payload.data)).catch((reason) => setError(errText(reason)))
+    void api<{ data: Post }>(`/posts/${id}`).then((payload) => {
+      setPost(payload.data)
+      if (!payload.data.author.is_self) recordDetailView(payload.data.id)
+    }).catch((reason) => setError(errText(reason)))
   }, [id])
 
   return (
@@ -777,7 +785,7 @@ export function CommunityPage() {
 
 export function TopicPage() {
   const { id } = useParams()
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const [topic, setTopic] = useState<Topic | null>(null)
   const [replies, setReplies] = useState<Reply[]>([])
@@ -904,6 +912,7 @@ export function TopicPage() {
               setText('')
               setReplyTo(null)
               toast.show('پاسخ شما ثبت شد', 'success')
+              void refresh()
               load()
             })
             .catch((reason) => setError(errText(reason)))
@@ -915,6 +924,7 @@ export function TopicPage() {
               <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
             </div>
           )}
+          <QuotaHint quotaKey="comments" />
           <textarea
             ref={replyInputRef}
             className="textarea"
@@ -939,6 +949,7 @@ export function PollPage() {
 
 function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
   const navigate = useNavigate()
+  const { refresh } = useAuth()
   const toast = useToast()
   const params = new URLSearchParams(window.location.search)
   const [slug, setSlug] = useState(params.get('community') || 'cardiology')
@@ -975,6 +986,7 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
     }
     void api<{ data: Topic }>(`/communities/${slug}/topics`, { method: 'POST', body: JSON.stringify(payload) })
       .then((created) => {
+        void refresh()
         toast.show(kind === 'case' ? 'کیس بالینی منتشر شد' : 'نظرسنجی منتشر شد', 'success')
         navigate(`/topics/${created.data.id}`)
       })
@@ -990,6 +1002,7 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
           <Icon name="shield" />
           <span>اطلاعات هویتی بیمار، چهره، کد ملی و شماره تماس را ننویسید. این فضا جایگزین ویزیت نیست.</span>
         </div>
+        <QuotaHint quotaKey="topics" />
 
         <div className="card stack">
           <Field label="انجمن تخصصی" htmlFor="topic-community">

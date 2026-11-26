@@ -26,5 +26,9 @@ class AppServiceProvider extends ServiceProvider
         RateLimiter::for('otp', function (Request $request) {
             return Limit::perMinutes(10, 5)->by($request->ip().'|'.$request->input('phone'));
         });
+
+        RateLimiter::for('impressions', function (Request $request) {
+            return Limit::perMinute(60)->by((string) ($request->user()?->id ?: $request->ip()));
+        });
     }
 }

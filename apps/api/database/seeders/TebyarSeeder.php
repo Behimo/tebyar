@@ -9,12 +9,15 @@ use App\Models\Conversation;
 use App\Models\Hashtag;
 use App\Models\Organization;
 use App\Models\Post;
+use App\Models\PostView;
+use App\Models\ProfileView;
 use App\Models\Reaction;
 use App\Models\Story;
 use App\Models\Topic;
 use App\Models\User;
 use App\Models\Vacancy;
 use App\Models\VacancyApplication;
+use App\Notifications\UserAlert;
 use Illuminate\Database\Seeder;
 
 class TebyarSeeder extends Seeder
@@ -72,6 +75,7 @@ class TebyarSeeder extends Seeder
             'identity_verified_at' => now(),
             'license_verified_at' => now(),
             'specialty_verified_at' => now(),
+            'pro_until' => now()->addYear(),
         ]);
 
         $karimi = $this->person([
@@ -276,7 +280,7 @@ class TebyarSeeder extends Seeder
 
             $post->hashtags()->create(['name' => 'قلب']);
 
-            $admin->notify(new \App\Notifications\UserAlert('system', 'به طبیار خوش آمدید', 'این اعلان نمونه‌ای برای داشبورد است.', '/notifications'));
+            $admin->notify(new UserAlert('system', 'به طبیار خوش آمدید', 'این اعلان نمونه‌ای برای داشبورد است.', '/notifications'));
         }
 
         $this->seedRichDemo(
@@ -460,9 +464,77 @@ class TebyarSeeder extends Seeder
         });
 
         if ($admin->unreadNotifications()->count() < 3) {
-            $rezaei->notify(new \App\Notifications\UserAlert('like', 'پسند جدید', 'سارا کریمی پست شما را پسندید.', '/'));
-            $karimi->notify(new \App\Notifications\UserAlert('comment', 'نظر جدید', 'علی احمدی روی پست شما نظر داد.', '/'));
-            $student->notify(new \App\Notifications\UserAlert('follow', 'دنبال‌کننده', 'دکتر محمد رضایی شما را دنبال کرد.', '/doctors/mohammad-rezaei'));
+            $rezaei->notify(new UserAlert('like', 'پسند جدید', 'سارا کریمی پست شما را پسندید.', '/'));
+            $karimi->notify(new UserAlert('comment', 'نظر جدید', 'علی احمدی روی پست شما نظر داد.', '/'));
+            $student->notify(new UserAlert('follow', 'دنبال‌کننده', 'دکتر محمد رضایی شما را دنبال کرد.', '/doctors/mohammad-rezaei'));
+        }
+
+        if ($rezaei->subscriptions()->doesntExist()) {
+            $rezaei->subscriptions()->create([
+                'plan' => 'اشتراک یک‌ساله',
+                'months' => 12,
+                'amount' => 0,
+                'status' => 'active',
+                'starts_at' => now()->subDays(10),
+                'ends_at' => $rezaei->pro_until,
+                'handled_by' => $admin->id,
+                'note' => 'اشتراک دمو طبیار پرو',
+            ]);
+        }
+
+        if ($ahmadi->subscriptions()->where('status', 'pending')->doesntExist()) {
+            $ahmadi->subscriptions()->create([
+                'plan' => 'اشتراک یک‌ماهه',
+                'months' => 1,
+                'amount' => 0,
+                'status' => 'pending',
+                'reference' => 'DEMO-98421',
+            ]);
+        }
+
+        $this->seedInsightsDemo($rezaei, [$karimi, $ahmadi, $nouri, $student]);
+    }
+
+    /** @param array<int, User> $viewers */
+    private function seedInsightsDemo(User $owner, array $viewers): void
+    {
+        if (PostView::query()->exists()) {
+            return;
+        }
+
+        $posts = $owner->posts()->visible()->where('type', '!=', 'repost')->get();
+        $sources = ['feed', 'explore', 'profile', 'detail'];
+
+        foreach (range(0, 29) as $daysAgo) {
+            $day = now()->subDays($daysAgo)->toDateString();
+            foreach ($viewers as $idx => $viewer) {
+                if (($daysAgo + $idx) % 2 === 0) {
+                    ProfileView::query()->firstOrCreate(
+                        [
+                            'profile_id' => $owner->id,
+                            'viewer_id' => $viewer->id,
+                            'viewed_on' => $day,
+                        ],
+                        ['views' => 1 + (($daysAgo + $idx) % 3)],
+                    );
+                }
+
+                foreach ($posts as $pIdx => $post) {
+                    if (($daysAgo + $idx + $pIdx) % 3 !== 0) {
+                        PostView::query()->firstOrCreate(
+                            [
+                                'post_id' => $post->id,
+                                'user_id' => $viewer->id,
+                                'viewed_on' => $day,
+                            ],
+                            [
+                                'views' => 1 + (($daysAgo + $pIdx) % 4),
+                                'source' => $sources[($daysAgo + $pIdx + $idx) % count($sources)],
+                            ],
+                        );
+                    }
+                }
+            }
         }
     }
 

@@ -50,4 +50,11 @@ class UserFactory extends Factory
             'email_verified_at' => null,
         ]);
     }
+
+    public function pro(int $months = 1): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'pro_until' => now()->addMonths($months),
+        ]);
+    }
 }

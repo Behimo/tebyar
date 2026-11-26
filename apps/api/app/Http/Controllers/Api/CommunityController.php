@@ -82,6 +82,8 @@ class CommunityController extends Controller
             abort(403);
         }
 
+        Membership::assertQuota($user, 'topics');
+
         if (in_array($data['kind'], ['case', 'poll'], true) && empty($data['disclaimer_accepted'])) {
             throw ValidationException::withMessages([
                 'disclaimer_accepted' => 'تأیید سلب مسئولیت الزامی است.',
@@ -146,6 +148,7 @@ class CommunityController extends Controller
     public function reply(Request $request, Topic $topic): JsonResponse
     {
         abort_if($topic->hidden_at, 404);
+        Membership::assertQuota($request->user(), 'comments');
         $data = $request->validate([
             'body' => ['required', 'string', 'max:4000'],
             'parent_id' => [

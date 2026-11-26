@@ -1,11 +1,16 @@
 import { Capacitor } from '@capacitor/core'
+import type { QuotaItem } from './types'
 
 export class ApiError extends Error {
   status: number
+  code?: string
+  quota?: QuotaItem
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, code?: string, quota?: QuotaItem) {
     super(message)
     this.status = status
+    this.code = code
+    this.quota = quota
   }
 }
 
@@ -29,10 +34,10 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
     .then(async (response) => {
       window.clearTimeout(timer)
       const text = await response.text()
-      let data: { message?: string; errors?: Record<string, string[]> } | null = null
+      let data: { message?: string; code?: string; quota?: QuotaItem; errors?: Record<string, string[]> } | null = null
       if (text) {
         try {
-          data = JSON.parse(text) as { message?: string; errors?: Record<string, string[]> }
+          data = JSON.parse(text) as { message?: string; code?: string; quota?: QuotaItem; errors?: Record<string, string[]> }
         } catch {
           data = null
         }
@@ -43,7 +48,11 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
           response.status === 502 || response.status === 503
             ? 'سرور API روشن نیست. در ترمینال: cd apps\\api سپس php artisan serve --host=0.0.0.0 --port=8000'
             : 'خطایی رخ داد.'
-        throw new ApiError(details || data?.message || fallback, response.status)
+        const message = details || data?.message || fallback
+        if (response.status === 402) {
+          window.dispatchEvent(new CustomEvent('tebyar:upgrade', { detail: { message, quota: data?.quota } }))
+        }
+        throw new ApiError(message, response.status, data?.code, data?.quota)
       }
       return data as T
     })

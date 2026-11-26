@@ -4,6 +4,8 @@ import { Link } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { api, when } from './api'
 import { useAuth } from './auth'
+import { useImpression, type ImpressionSource } from './impressions'
+import { QuotaHint } from './pro'
 import type { Comment, Post } from './types'
 import { Avatar, ListSkel, MediaCarousel, MentionBox, MentionText, Person, PostOwnerActions, VerifiedSeal, postCover, PostCard, errText, useToast } from './ui'
 import { Icon } from './icons'
@@ -82,7 +84,7 @@ export function CommentSheet({
   onClose: () => void
   onChange?: (post: Post) => void
 }) {
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const [post, setPost] = useState<Post | null>(null)
   const [loading, setLoading] = useState(false)
@@ -169,6 +171,7 @@ export function CommentSheet({
                     setText('')
                     setReplyTo(null)
                     reload()
+                    void refresh()
                     toast.show('نظر شما ثبت شد', 'success')
                   })
                   .catch((reason) => setError(errText(reason)))
@@ -181,6 +184,7 @@ export function CommentSheet({
                   <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
                 </div>
               )}
+              <div style={{ padding: '6px 14px 0' }}><QuotaHint quotaKey="comments" /></div>
               <div className="ig-compose-row">
                 {user && <Avatar user={user} small />}
                 <div className="ig-compose-pill">
@@ -267,7 +271,7 @@ export function InstagramPostDetail({
   onChange: (post: Post) => void
   onRemove?: () => void
 }) {
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const [saved, setSaved] = useState(post.bookmarked)
   useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
@@ -361,6 +365,7 @@ export function InstagramPostDetail({
               setText('')
               setReplyTo(null)
               reload()
+              void refresh()
               toast.show('نظر شما ثبت شد', 'success')
             })
             .catch((reason) => setError(errText(reason)))
@@ -368,6 +373,7 @@ export function InstagramPostDetail({
         }}
       >
         {error && <div className="error ig-compose-error">{error}</div>}
+        <div style={{ marginBottom: 6 }}><QuotaHint quotaKey="comments" /></div>
         <div className="ig-compose-row">
           {user && <Avatar user={user} small />}
           <div className="ig-compose-pill">
@@ -388,47 +394,86 @@ export function InstagramPostDetail({
   )
 }
 
+function PostGridCell({
+  post,
+  index,
+  tallClass,
+  impressionSource,
+  onOpen,
+}: {
+  post: Post
+  index: number
+  tallClass: string
+  impressionSource?: ImpressionSource
+  onOpen?: (post: Post, index: number) => void
+}) {
+  const impressionRef = useImpression(
+    post.id,
+    impressionSource ?? 'profile',
+    Boolean(impressionSource) && !post.author.is_self,
+  )
+  const cover = postCover(post)
+  const label = post.body?.slice(0, 72) || post.link_title || 'پست'
+  const inner = (
+    <>
+      {cover
+        ? <img src={cover} alt="" loading="lazy" decoding="async" />
+        : (
+          <span className="post-grid-text">
+            <span className="post-grid-text-quote">{label}</span>
+            <span className="post-grid-text-meta">{post.author.specialty_title || post.author.name}</span>
+          </span>
+        )}
+      {post.media.length > 1 && <span className="post-grid-stack" aria-hidden="true">❐</span>}
+      {post.type === 'repost' && <span className="post-grid-badge" aria-hidden="true"><Icon name="repost" /></span>}
+      {post.media[0]?.kind === 'video' && <span className="post-grid-badge video" aria-hidden="true">▶</span>}
+    </>
+  )
+  return onOpen
+    ? (
+      <button ref={impressionRef} className={`post-grid-cell${tallClass}`} type="button" onClick={() => onOpen(post, index)} role="listitem">
+        {inner}
+      </button>
+    )
+    : (
+      <Link ref={impressionRef} className={`post-grid-cell${tallClass}`} to={`/posts/${post.id}`} role="listitem">
+        {inner}
+      </Link>
+    )
+}
+
 export function PostGrid({
   posts,
   aspect = 'portrait',
+  variant = 'default',
+  impressionSource,
   onOpen,
 }: {
   posts: Post[]
   aspect?: 'square' | 'portrait'
+  variant?: 'default' | 'explore'
+  impressionSource?: ImpressionSource
   onOpen?: (post: Post, index: number) => void
 }) {
   if (posts.length === 0) return null
+  const cls = variant === 'explore' ? 'post-grid post-grid--explore' : `post-grid post-grid--${aspect}`
   return (
-    <div className={`post-grid post-grid--${aspect}`} role="list">
+    <div className={cls} role="list">
       {posts.map((post, index) => {
-        const cover = postCover(post)
-        const label = post.body?.slice(0, 72) || post.link_title || 'پست'
-        const inner = (
-          <>
-            {cover
-              ? <img src={cover} alt="" loading="lazy" decoding="async" />
-              : (
-                <span className="post-grid-text">
-                  <span className="post-grid-text-quote">{label}</span>
-                  <span className="post-grid-text-meta">{post.author.specialty_title || post.author.name}</span>
-                </span>
-              )}
-            {post.media.length > 1 && <span className="post-grid-stack" aria-hidden="true">❐</span>}
-            {post.type === 'repost' && <span className="post-grid-badge" aria-hidden="true"><Icon name="repost" /></span>}
-            {post.media[0]?.kind === 'video' && <span className="post-grid-badge video" aria-hidden="true">▶</span>}
-          </>
+        const blockIdx = Math.floor(index / 5)
+        const tallClass = variant === 'explore' && index % 5 === 0
+          ? (blockIdx % 2 === 0 ? ' is-tall-right' : ' is-tall-left')
+          : ''
+        return (
+          <PostGridCell
+            key={post.id}
+            post={post}
+            index={index}
+            tallClass={tallClass}
+            impressionSource={impressionSource}
+            onOpen={onOpen}
+          />
         )
-        return onOpen
-          ? (
-            <button key={post.id} className="post-grid-cell" type="button" onClick={() => onOpen(post, index)} role="listitem">
-              {inner}
-            </button>
-          )
-          : (
-            <Link key={post.id} className="post-grid-cell" to={`/posts/${post.id}`} role="listitem">
-              {inner}
-            </Link>
-          )
       })}
     </div>
   )
@@ -446,6 +491,10 @@ export function PostViewer({
   const trackRef = useRef<HTMLDivElement>(null)
   const [commentId, setCommentId] = useState<number | null>(null)
   const [items, setItems] = useState(posts)
+
+  useEffect(() => {
+    setItems(posts)
+  }, [posts])
 
   useEffect(() => {
     const node = trackRef.current
@@ -466,6 +515,7 @@ export function PostViewer({
             <PostCard
               post={post}
               variant="featured"
+              impressionSource="explore"
               onComment={() => setCommentId(post.id)}
               onChange={(next) => setItems((rows) => rows.map((row) => (row.id === next.id ? next : row)))}
             />

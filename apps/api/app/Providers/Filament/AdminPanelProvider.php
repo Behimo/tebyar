@@ -3,6 +3,7 @@
 namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
+use App\Filament\Pages\MembershipSettings;
 use App\Filament\Widgets\ActivityChart;
 use App\Filament\Widgets\OpenReportsTable;
 use App\Filament\Widgets\PendingVerificationsTable;
@@ -60,6 +61,7 @@ class AdminPanelProvider extends PanelProvider
             ->discoverResources(in: app_path('Filament/Resources'), for: 'App\\Filament\\Resources')
             ->pages([
                 Dashboard::class,
+                MembershipSettings::class,
             ])
             ->widgets([
                 TebyarOverview::class,

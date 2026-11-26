@@ -10,12 +10,14 @@ use App\Models\Story;
 use App\Models\StoryView;
 use App\Models\User;
 use App\Services\Alerts;
+use App\Services\ExploreRanker;
 use App\Support\MediaStore;
 use App\Support\Membership;
 use App\Support\Present;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 
 class SocialController extends Controller
@@ -54,27 +56,24 @@ class SocialController extends Controller
         ]);
     }
 
-    public function explore(Request $request): JsonResponse
+    public function explore(Request $request, ExploreRanker $ranker): JsonResponse
     {
         $viewer = $request->user();
-        $hidden = Present::hiddenIds($viewer);
         $term = trim($request->string('q')->toString());
 
         if ($term !== '') {
             return app(InboxController::class)->search($request);
         }
 
-        $posts = Post::query()->visible()
-            ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_id', $hidden))
-            ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
-            ->withCount(['reactions', 'comments', 'reposts'])
-            ->withViewerState($viewer)
-            ->latest('posts.created_at')
-            ->paginate(24);
+        $page = max(1, (int) $request->integer('page', 1));
+        $tag = $request->string('tag')->toString() ?: null;
+        $ranked = $ranker->rank($viewer, $page, $tag, $request->url());
 
         return response()->json([
-            'data' => $posts->getCollection()->map(fn (Post $post) => Present::post($post, $viewer))->values(),
-            'next_page' => $posts->nextPageUrl(),
+            'data' => $ranked['posts']->map(fn (Post $post) => Present::post($post, $viewer))->values(),
+            'next_page' => $ranked['next_page'],
+            'tags' => $ranked['tags'],
+            'suggested' => $ranked['suggested']->map(fn (User $doctor) => Present::user($doctor, $viewer))->values(),
         ]);
     }
 
@@ -90,6 +89,7 @@ class SocialController extends Controller
     {
         $user = $request->user();
         $this->assertCanPost($user);
+        Membership::assertQuota($user, 'posts');
 
         $data = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
@@ -202,6 +202,7 @@ class SocialController extends Controller
     public function comment(Request $request, Post $post): JsonResponse
     {
         $this->visible($post, $request->user());
+        Membership::assertQuota($request->user(), 'comments');
         $data = $request->validate([
             'body' => ['required', 'string', 'max:2000'],
             'parent_id' => ['nullable', 'integer'],
@@ -299,6 +300,7 @@ class SocialController extends Controller
     public function storeStory(Request $request): JsonResponse
     {
         $this->assertCanPost($request->user());
+        Membership::assertQuota($request->user(), 'stories');
         $request->validate([
             'media' => ['required', 'file', 'mimes:jpg,jpeg,png,webp,heic,heif', 'max:12288'],
         ]);
@@ -318,7 +320,7 @@ class SocialController extends Controller
         $path = $story->path;
         $story->delete();
         try {
-            \Illuminate\Support\Facades\Storage::disk('public')->delete($path);
+            Storage::disk('public')->delete($path);
         } catch (\Throwable) {
         }
 

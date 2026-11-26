@@ -20,7 +20,7 @@ use Laravel\Sanctum\HasApiTokens;
     'name', 'email', 'password', 'phone', 'role', 'account_status', 'staff_role',
     'slug', 'specialty_title', 'headline', 'bio', 'city', 'avatar_path',
     'education_verified_at', 'identity_verified_at', 'license_verified_at', 'specialty_verified_at',
-    'privacy_dm', 'privacy_mentions', 'show_read_receipts', 'open_to_work',
+    'pro_until', 'privacy_dm', 'privacy_mentions', 'show_read_receipts', 'open_to_work',
     'notify_interactions', 'notify_messages', 'is_demo',
 ])]
 #[Hidden(['password', 'remember_token', 'phone'])]
@@ -38,6 +38,7 @@ class User extends Authenticatable implements FilamentUser
             'identity_verified_at' => 'datetime',
             'license_verified_at' => 'datetime',
             'specialty_verified_at' => 'datetime',
+            'pro_until' => 'datetime',
             'notify_interactions' => 'boolean',
             'notify_messages' => 'boolean',
             'show_read_receipts' => 'boolean',
@@ -119,6 +120,16 @@ class User extends Authenticatable implements FilamentUser
     public function organization(): HasOne
     {
         return $this->hasOne(Organization::class, 'owner_id');
+    }
+
+    public function subscriptions(): HasMany
+    {
+        return $this->hasMany(Subscription::class);
+    }
+
+    public function isPro(): bool
+    {
+        return $this->pro_until !== null && $this->pro_until->isFuture();
     }
 
     public function canAccessPanel(Panel $panel): bool

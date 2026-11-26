@@ -42,6 +42,7 @@ class Present
             'is_following' => $detail && $viewer ? $viewer->following()->where('users.id', $user->id)->exists() : false,
             'is_self' => $viewer?->id === $user->id,
             'is_demo' => (bool) $user->is_demo,
+            'is_pro' => Membership::isPro($user),
             'open_to_work' => (bool) $user->open_to_work,
             'anonymous' => false,
         ];
@@ -77,6 +78,9 @@ class Present
         $card['bio'] = $user->bio;
         $card['can_create_case'] = Membership::canCreateCase($user);
         $card['can_create_poll'] = Membership::canCreatePoll($user);
+        $card['is_pro'] = Membership::isPro($user);
+        $card['pro_until'] = $user->pro_until?->toIso8601String();
+        $card['quotas'] = Membership::quotas($user);
         $card['verification'] = $latest ? [
             'type' => $latest->type,
             'status' => $latest->status,

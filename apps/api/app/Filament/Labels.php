@@ -250,4 +250,26 @@ class Labels
             default => 'gray',
         };
     }
+
+    public static function subscriptionStatus(?string $status): string
+    {
+        return match ($status) {
+            'pending' => 'در انتظار بررسی',
+            'active' => 'فعال',
+            'rejected' => 'ردشده',
+            'cancelled' => 'لغوشده',
+            default => $status ?? 'نامشخص',
+        };
+    }
+
+    public static function subscriptionStatusColor(?string $status): string
+    {
+        return match ($status) {
+            'pending' => 'warning',
+            'active' => 'success',
+            'rejected' => 'danger',
+            'cancelled' => 'gray',
+            default => 'gray',
+        };
+    }
 }

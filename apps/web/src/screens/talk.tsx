@@ -5,6 +5,7 @@ import { api, when } from '../api'
 import { readCache, writeCache } from '../cache'
 import { useAuth } from '../auth'
 import { Icon } from '../icons'
+import { QuotaHint } from '../pro'
 import type { ChatMessage, CommunityCard, Conversation, Me, Post, Topic, UserCard } from '../types'
 import { Avatar, Button, ConfirmSheet, Empty, Field, ListSkel, Sheet, Top, VerifiedSeal, errText, useToast } from '../ui'
 import { PostGrid, PostViewer } from '../post-ui'
@@ -27,7 +28,7 @@ const entryLabels: Record<string, string> = {
 
 export function Messages() {
   const navigate = useNavigate()
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const [items, setItems] = useState<Conversation[]>(() => readCache<Conversation[]>(conversationsKey) ?? [])
   const [error, setError] = useState('')
@@ -161,6 +162,7 @@ export function Messages() {
       <Sheet open={dmOpen} onClose={() => setDmOpen(false)}>
         <div className="stack">
           <h2>پیام شخصی جدید</h2>
+          <QuotaHint quotaKey="conversations" />
           <input className="input" value={dmQuery} onChange={(event) => setDmQuery(event.target.value)} placeholder="جست‌وجوی نام، تخصص یا شهر همکار..." autoFocus />
           {dmHits.length === 0 && <p className="muted center" style={{ padding: 12 }}>همکاری پیدا نشد. نام همکار را جست‌وجو کنید.</p>}
           {dmHits.map((doctor) => (
@@ -196,6 +198,7 @@ export function Messages() {
       <Sheet open={groupOpen} onClose={() => setGroupOpen(false)}>
         <div className="stack">
           <h2>گروه جدید</h2>
+          <QuotaHint quotaKey="conversations" />
           <input className="input" value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder="نام گروه" />
           <input className="input" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="جست‌وجو بین دنبال‌کننده‌ها و دنبال‌شده‌ها" />
           {memberHits.length === 0 && <p className="muted center">کسی در دنبال‌کردن‌های شما پیدا نشد.</p>}
@@ -236,6 +239,7 @@ export function Messages() {
                 setGroupOpen(false)
                 setGroupTitle('')
                 setPicked([])
+                void refresh()
                 navigate(`/messages/${payload.data.id}`)
               }).catch((reason) => toast.show(errText(reason), 'error'))
                 .finally(() => setGroupBusy(false))
@@ -251,7 +255,7 @@ export function Messages() {
 
 export function Chat() {
   const { id } = useParams()
-  const { user } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
@@ -390,6 +394,7 @@ export function Chat() {
               .then((sent) => {
                 setMessages((rows) => rows.map((row) => row.id === pending ? { ...sent.data, mine: true } : row))
                 if (fileRef.current) fileRef.current.value = ''
+                if (messages.length === 0) void refresh()
               })
               .catch((reason) => {
                 setMessages((rows) => rows.filter((row) => row.id !== pending))
@@ -399,7 +404,7 @@ export function Chat() {
           }}
         >
           <button className="icon-btn" type="button" aria-label="پیوست" onClick={() => fileRef.current?.click()}>
-            <Icon name="file" />
+            <Icon name="paperclip" />
           </button>
           <input ref={fileRef} className="composer-file" name="attachment" type="file" accept="image/*,application/pdf" tabIndex={-1} />
           <input className="input" name="body" value={text} onChange={(event) => setText(event.target.value)} placeholder="پیام..." aria-label="متن پیام" />
@@ -482,13 +487,13 @@ function ProfileTabs({ payload }: { payload: ProfilePayload; onChange?: () => vo
         {tab === 'posts' && (
           <>
             {payload.posts.length === 0 && <Empty icon="image" title="پستی نیست" text="اولین پست را از دکمه انتشار بسازید." />}
-            <PostGrid posts={payload.posts} aspect="portrait" />
+            <PostGrid posts={payload.posts} aspect="portrait" impressionSource="profile" />
           </>
         )}
         {tab === 'reposts' && (
           <>
             {payload.reposts.length === 0 && <Empty icon="repost" title="ریپوستی نیست" text="بازنشرهای شما اینجا نمایش داده می‌شود." />}
-            <PostGrid posts={payload.reposts} aspect="portrait" />
+            <PostGrid posts={payload.reposts} aspect="portrait" impressionSource="profile" />
           </>
         )}
         {tab === 'communities' && (
@@ -574,6 +579,9 @@ function ProfileLayout({
           <div className="profile-name-row">
             <h1>{user.name}</h1>
             <VerifiedSeal user={user} />
+            {user.is_pro && (
+              <span className="pro-badge"><Icon name="crown" filled /> پرو</span>
+            )}
           </div>
           {user.headline && <p className="profile-headline">{user.headline}</p>}
           {(roleOrSpec || user.city) && (
@@ -674,15 +682,22 @@ export function Profile() {
   if (!user) return null
   return (
     <>
-      <Top title="پروفایل" />
+      <Top
+        title="پروفایل"
+        action={(
+          <Link className="icon-btn" to="/settings" aria-label="تنظیمات و منو">
+            <Icon name="menu" />
+          </Link>
+        )}
+      />
       <div className="screen-body profile-screen">
         <ProfileLayout
           user={user}
           actions={(
             <>
               <Link className="btn btn-ghost" to="/profile/edit"><Icon name="edit" /> ویرایش</Link>
-              <Link className="btn btn-ghost" to="/messages"><Icon name="chat" /> پیام‌ها</Link>
-              <Link className="btn btn-primary" to="/settings"><Icon name="settings" /> تنظیمات</Link>
+              <Link className="btn btn-ghost" to="/insights"><Icon name="insights" /> آمار</Link>
+              <Link className="btn btn-primary" to="/messages"><Icon name="direct" /> پیام‌ها</Link>
             </>
           )}
         >
@@ -983,60 +998,193 @@ export function EditProfile() {
 
 const exploreKey = 'tebyar-explore'
 
+type ExploreFeedResponse = {
+  data: Post[]
+  next_page: string | null
+  tags?: string[]
+  suggested?: UserCard[]
+}
+
 export function Explore() {
   const navigate = useNavigate()
+  const toast = useToast()
   const [q, setQ] = useState('')
+  const [selectedTag, setSelectedTag] = useState('')
   const [doctors, setDoctors] = useState<UserCard[]>([])
   const [tags, setTags] = useState<string[]>([])
+  const [suggested, setSuggested] = useState<UserCard[]>([])
   const [posts, setPosts] = useState<Post[]>(() => readCache<Post[]>(exploreKey) ?? [])
   const [loading, setLoading] = useState(() => readCache<Post[]>(exploreKey) == null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [page, setPage] = useState(1)
+  const [hasMore, setHasMore] = useState(false)
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
+  const sentinelRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    if (q.trim().length >= 2) {
+    const trimmed = q.trim()
+    if (trimmed.length >= 2) {
       setLoading(true)
+      setHasMore(false)
       const timer = window.setTimeout(() => {
-        void api<{ doctors: UserCard[]; posts: Post[]; hashtags?: string[] }>(`/explore?q=${encodeURIComponent(q)}`).then((payload) => {
+        void api<{ doctors: UserCard[]; posts: Post[]; hashtags?: string[] }>(`/explore?q=${encodeURIComponent(trimmed)}`).then((payload) => {
           setDoctors(payload.doctors)
           setTags(payload.hashtags ?? [])
+          setSuggested([])
           setPosts(payload.posts)
           setLoading(false)
         }).catch(() => setLoading(false))
       }, 250)
       return () => window.clearTimeout(timer)
     }
-    const cached = readCache<Post[]>(exploreKey)
-    if (cached) {
-      setPosts(cached)
-      setLoading(false)
+
+    if (!selectedTag) {
+      const cached = readCache<Post[]>(exploreKey)
+      if (cached) {
+        setPosts(cached)
+        setLoading(false)
+      } else {
+        setLoading(true)
+      }
     } else {
       setLoading(true)
     }
+
     setDoctors([])
-    setTags([])
-    void api<{ data: Post[] }>('/explore').then((payload) => {
+    setPage(1)
+    const qs = selectedTag ? `?tag=${encodeURIComponent(selectedTag)}` : ''
+    let cancelled = false
+    void api<ExploreFeedResponse>(`/explore${qs}`).then((payload) => {
+      if (cancelled) return
       setPosts(payload.data)
-      writeCache(exploreKey, payload.data)
+      if (payload.tags) setTags(payload.tags)
+      if (payload.suggested) setSuggested(payload.suggested)
+      setHasMore(Boolean(payload.next_page))
+      if (!selectedTag) writeCache(exploreKey, payload.data)
       setLoading(false)
-    }).catch(() => setLoading(false))
-    return undefined
-  }, [q])
+    }).catch(() => {
+      if (!cancelled) setLoading(false)
+    })
+    return () => { cancelled = true }
+  }, [q, selectedTag])
+
+  useEffect(() => {
+    const el = sentinelRef.current
+    if (!el || !hasMore || loadingMore || q.trim().length >= 2) return
+    const observer = new IntersectionObserver((entries) => {
+      if (!entries[0]?.isIntersecting) return
+      const nextPage = page + 1
+      setLoadingMore(true)
+      const params = new URLSearchParams({ page: String(nextPage) })
+      if (selectedTag) params.set('tag', selectedTag)
+      void api<ExploreFeedResponse>(`/explore?${params}`)
+        .then((payload) => {
+          setPosts((current) => {
+            const seen = new Set(current.map((item) => item.id))
+            const fresh = payload.data.filter((item) => !seen.has(item.id))
+            return [...current, ...fresh]
+          })
+          setPage(nextPage)
+          setHasMore(Boolean(payload.next_page))
+        })
+        .catch(() => setHasMore(false))
+        .finally(() => setLoadingMore(false))
+    }, { rootMargin: '220px' })
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [hasMore, loadingMore, page, q, selectedTag])
+
+  const toggleFollow = (doctor: UserCard) => {
+    if (!doctor.id) return
+    const next = !doctor.is_following
+    setSuggested((rows) => rows.map((row) => (row.id === doctor.id ? { ...row, is_following: next } : row)))
+    void api(`/doctors/${doctor.id}/follow`, { method: next ? 'POST' : 'DELETE' })
+      .then(() => toast.show(next ? 'دنبال شد' : 'دنبال‌کردن لغو شد', 'info'))
+      .catch((reason) => {
+        setSuggested((rows) => rows.map((row) => (row.id === doctor.id ? { ...row, is_following: !next } : row)))
+        toast.show(errText(reason), 'error')
+      })
+  }
 
   return (
     <>
       <Top title="اکسپلور" back />
       <div className="screen-body search-screen explore-screen">
         <div className="pad">
-          <div className="field">
-            <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="جست‌وجوی نام پزشک، پست یا #هشتگ..." />
+          <div className="explore-search-pill">
+            <Icon name="search" />
+            <input
+              value={q}
+              onChange={(event) => setQ(event.target.value)}
+              placeholder="جست‌وجوی نام پزشک، پست یا #هشتگ..."
+              aria-label="جست‌وجو در اکسپلور"
+            />
+            {q && (
+              <button type="button" className="text-btn" style={{ padding: 4 }} aria-label="پاک‌کردن" onClick={() => setQ('')}>
+                <Icon name="close" />
+              </button>
+            )}
           </div>
-          {tags.length > 0 && (
-            <div className="chips explore-tags">
+
+          {!q.trim() && tags.length > 0 && (
+            <div className="explore-tags">
+              <button
+                className={selectedTag === '' ? 'chip is-on' : 'chip chip-blue'}
+                type="button"
+                onClick={() => setSelectedTag('')}
+              >
+                برای شما
+              </button>
               {tags.map((tag) => (
-                <button key={tag} className="chip chip-blue" type="button" onClick={() => setQ(`#${tag}`)}>#{tag}</button>
+                <button
+                  key={tag}
+                  className={selectedTag === tag ? 'chip is-on' : 'chip chip-blue'}
+                  type="button"
+                  onClick={() => setSelectedTag((cur) => (cur === tag ? '' : tag))}
+                >
+                  #{tag}
+                </button>
               ))}
             </div>
           )}
+
+          {q.trim().length >= 2 && tags.length > 0 && (
+            <div className="explore-tags">
+              {tags.map((tag) => (
+                <button key={tag} className="chip chip-blue" type="button" onClick={() => { setQ(''); setSelectedTag(tag) }}>
+                  #{tag}
+                </button>
+              ))}
+            </div>
+          )}
+
+          {!q.trim() && !selectedTag && suggested.length > 0 && (
+            <div className="explore-suggest" aria-label="همکاران پیشنهادی">
+              {suggested.map((doctor) => (
+                <div key={doctor.id} className="explore-suggest-card">
+                  <button
+                    type="button"
+                    style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 5, width: '100%' }}
+                    onClick={() => doctor.slug && navigate(`/doctors/${doctor.slug}`)}
+                  >
+                    <Avatar user={doctor} />
+                    <b>{doctor.name}</b>
+                    <span className="sub">{doctor.specialty_title || doctor.role_label}</span>
+                  </button>
+                  <Button
+                    size="sm"
+                    variant={doctor.is_following ? 'ghost' : 'primary'}
+                    block
+                    type="button"
+                    onClick={() => toggleFollow(doctor)}
+                  >
+                    {doctor.is_following ? 'دنبال می‌کنید' : 'دنبال کردن'}
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+
           {loading && posts.length === 0 && doctors.length === 0 && <ListSkel rows={5} />}
           {doctors.length > 0 && (
             <div className="card" style={{ padding: '4px 10px', marginBottom: 12 }}>
@@ -1059,9 +1207,12 @@ export function Explore() {
         </div>
         <PostGrid
           posts={posts}
-          aspect="portrait"
+          variant="explore"
+          impressionSource="explore"
           onOpen={(_, index) => setViewerIndex(index)}
         />
+        <div ref={sentinelRef} style={{ height: 24 }} aria-hidden="true" />
+        {loadingMore && <p className="muted center" style={{ fontSize: 12, paddingBottom: 16 }}>در حال بارگذاری بیشتر...</p>}
       </div>
       {viewerIndex != null && posts.length > 0 && (
         <PostViewer posts={posts} startIndex={viewerIndex} onClose={() => setViewerIndex(null)} />

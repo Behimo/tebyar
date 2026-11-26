@@ -17,6 +17,7 @@ import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { api, assetUrl, when } from './api'
+import { useImpression, type ImpressionSource } from './impressions'
 import type { Post, UserCard } from './types'
 import { Brand, Icon } from './icons'
 
@@ -673,6 +674,7 @@ export function PostCard({
   onChange,
   flush = false,
   variant = 'featured',
+  impressionSource = 'feed',
   onComment,
   onRemove,
   detail = false,
@@ -681,6 +683,7 @@ export function PostCard({
   onChange: (post: Post) => void
   flush?: boolean
   variant?: 'featured' | 'following'
+  impressionSource?: ImpressionSource
   onComment?: () => void
   onRemove?: () => void
   detail?: boolean
@@ -691,6 +694,7 @@ export function PostCard({
   const [reposted, setReposted] = useState(false)
   const [burst, setBurst] = useState(false)
   const lastTap = useRef(0)
+  const impressionRef = useImpression(post.id, impressionSource, !detail && !flush && !post.author.is_self)
 
   useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
   const hasMedia = post.media.length > 0 || postCover(post)
@@ -788,6 +792,7 @@ export function PostCard({
 
   return (
     <motion.article
+      ref={impressionRef}
       className={cardClass}
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
@@ -934,6 +939,9 @@ export function PostOwnerActions({
         <Icon name="more" />
       </button>
       <Sheet open={open} onClose={() => setOpen(false)}>
+        <Link className="sheet-item" to={`/insights/posts/${post.id}`} onClick={() => setOpen(false)}>
+          <Icon name="insights" /> آمار پست
+        </Link>
         <button className="sheet-item" type="button" onClick={() => { setOpen(false); setBody(post.body ?? ''); setEditing(true) }}>
           <Icon name="edit" /> ویرایش متن
         </button>

@@ -2,12 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Filament\Pages\MembershipSettings;
 use App\Filament\Widgets\ActivityChart;
 use App\Filament\Widgets\OpenReportsTable;
 use App\Filament\Widgets\PendingVerificationsTable;
 use App\Filament\Widgets\RolesChart;
 use App\Filament\Widgets\TebyarOverview;
 use App\Models\User;
+use App\Support\AppSettings;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Livewire\Livewire;
 use Tests\TestCase;
@@ -61,5 +63,22 @@ class AdminDashboardTest extends TestCase
         $this->actingAs($member)
             ->get('/admin')
             ->assertForbidden();
+    }
+
+    public function test_admin_can_update_membership_settings_page(): void
+    {
+        $admin = User::factory()->create(['staff_role' => 'admin']);
+
+        $this->actingAs($admin);
+
+        Livewire::test(MembershipSettings::class)
+            ->assertOk()
+            ->set('data.free_quotas.topics', 4)
+            ->set('data.limits_enabled', false)
+            ->call('save')
+            ->assertHasNoErrors();
+
+        $this->assertFalse(AppSettings::limitsEnabled());
+        $this->assertSame(4, AppSettings::freeQuotas()['topics']);
     }
 }

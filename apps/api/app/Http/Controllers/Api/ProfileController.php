@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\ProfileEntry;
+use App\Models\ProfileView;
 use App\Models\User;
 use App\Services\Alerts;
 use App\Services\VerificationService;
@@ -150,6 +151,26 @@ class ProfileController extends Controller
             ->firstOrFail();
 
         $viewer = $request->user();
+        if ($viewer->id !== $user->id) {
+            $today = now()->toDateString();
+            $existing = ProfileView::query()
+                ->where('profile_id', $user->id)
+                ->where('viewer_id', $viewer->id)
+                ->whereDate('viewed_on', $today)
+                ->first();
+
+            if ($existing) {
+                $existing->increment('views');
+            } else {
+                ProfileView::query()->create([
+                    'profile_id' => $user->id,
+                    'viewer_id' => $viewer->id,
+                    'viewed_on' => $today,
+                    'views' => 1,
+                ]);
+            }
+        }
+
         $postQuery = fn () => $user->posts()->visible()
             ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])

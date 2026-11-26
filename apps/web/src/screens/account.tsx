@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { api, when } from '../api'
 import { useAuth } from '../auth'
 import type { Me, Notice, Post, UserCard, Vacancy } from '../types'
-import { Button, ConfirmSheet, Empty, Field, OtpInput, Person, Toggle, Top, errText, latinDigits, useToast } from '../ui'
+import { Avatar, Button, ConfirmSheet, Empty, Field, OtpInput, Person, Toggle, Top, VerifiedSeal, errText, latinDigits, useToast } from '../ui'
 import { PostGrid } from '../post-ui'
 import { Brand, Icon } from '../icons'
 
@@ -542,8 +542,9 @@ export function Notifications() {
 
   const iconFor = (type: string) => {
     if (type === 'verification') return { icon: 'shield', cls: 'notice-icon is-ok' }
+    if (type === 'pro') return { icon: 'crown', cls: 'notice-icon is-ok' }
     if (type === 'warning') return { icon: 'xCircle', cls: 'notice-icon is-warn' }
-    if (type === 'message') return { icon: 'chat', cls: 'notice-icon' }
+    if (type === 'message') return { icon: 'direct', cls: 'notice-icon' }
     return { icon: 'bell', cls: 'notice-icon' }
   }
 
@@ -611,6 +612,53 @@ export function Bookmarks() {
   )
 }
 
+const ticketStatusLabels: Record<string, string> = {
+  open: 'در انتظار پاسخ',
+  pending: 'پاسخ داده‌شده',
+  closed: 'بسته‌شده',
+}
+
+const faNum = new Intl.NumberFormat('fa-IR')
+
+function SettingsRow({
+  icon,
+  tone = 'cobalt',
+  title,
+  sub,
+  to,
+  onClick,
+  trailing,
+  danger = false,
+}: {
+  icon: string
+  tone?: 'cobalt' | 'teal' | 'violet' | 'coral' | 'amber' | 'gray' | 'danger'
+  title: string
+  sub?: string
+  to?: string
+  onClick?: () => void
+  trailing?: React.ReactNode
+  danger?: boolean
+}) {
+  const content = (
+    <>
+      <span className={`settings-row-icon tone-${tone}`}>
+        <Icon name={icon} />
+      </span>
+      <div className="settings-row-body">
+        <div className="settings-row-title">{title}</div>
+        {sub && <div className="settings-row-sub">{sub}</div>}
+      </div>
+      {trailing !== undefined
+        ? trailing
+        : <span className="settings-row-chev"><Icon name="chevronLeft" /></span>}
+    </>
+  )
+  const cls = danger ? 'settings-row settings-row--danger' : 'settings-row'
+  if (to) return <Link className={cls} to={to}>{content}</Link>
+  if (onClick) return <button className={cls} type="button" onClick={onClick}>{content}</button>
+  return <div className={cls}>{content}</div>
+}
+
 export function Settings() {
   const { user, refresh, logout } = useAuth()
   const toast = useToast()
@@ -646,51 +694,126 @@ export function Settings() {
     setOpenToWork(user.open_to_work ?? false)
   }, [user])
 
-  useEffect(() => {
-    api<{ data: UserCard[] }>('/blocks').then((payload) => setBlocks(payload.data)).catch(() => undefined)
+  const loadTickets = () => {
     api<{ data: { id: number; subject: string; status: string; messages: { body: string }[] }[] }>('/support-tickets')
       .then((payload) => setTickets(payload.data))
       .catch(() => undefined)
+  }
+
+  useEffect(() => {
+    api<{ data: UserCard[] }>('/blocks').then((payload) => setBlocks(payload.data)).catch(() => undefined)
+    loadTickets()
     api<{ data: { id: number; name: string; current: boolean; last_used_at: string | null; created_at: string | null }[] }>('/me/sessions')
       .then((payload) => setSessions(payload.data))
       .catch(() => undefined)
   }, [])
 
   if (!user) return null
+  const quotaItems = user.quotas ? Object.values(user.quotas.items) : []
+  const openUpgrade = () => window.dispatchEvent(new CustomEvent('tebyar:upgrade'))
+
   return (
     <>
-      <Top title="تنظیمات" back />
+      <Top title="تنظیمات و فعالیت" back />
       <div className="screen-body pad settings-screen">
-        <h2 className="section-title section-title--tight">ظاهر</h2>
-        <div className="card settings-card">
-          <div className="kv">
-            <span className="k">حالت تیره / روشن</span>
-            <Toggle
-              label="تغییر تم"
-              on={dark}
-              onChange={(next) => {
-                setDark(next)
-                document.documentElement.dataset.theme = next ? 'dark' : 'light'
-                localStorage.setItem('tebyar_theme', next ? 'dark' : '')
-              }}
-            />
+        <Link className="settings-account-card" to="/profile/edit">
+          <Avatar user={user} />
+          <div className="body">
+            <div className="name-row">
+              <b>{user.name}</b>
+              <VerifiedSeal user={user} />
+              {user.is_pro
+                ? <span className="pro-badge"><Icon name="crown" filled /> پرو</span>
+                : <span className="chip">{user.role_label}</span>}
+            </div>
+            <div className="sub">{user.specialty_title || user.headline || 'ویرایش پروفایل و سوابق علمی'}</div>
           </div>
+          <span className="settings-row-chev"><Icon name="chevronLeft" /></span>
+        </Link>
+
+        <section className="settings-pro-card">
+          <div className="settings-pro-head">
+            <div className="settings-pro-title">
+              <Icon name="crown" filled />
+              <span>{user.is_pro ? 'اشتراک طبیار پرو فعال است' : 'عضویت رایگان · طبیار پرو'}</span>
+            </div>
+            <Button size="sm" variant={user.is_pro ? 'ghost' : 'primary'} type="button" onClick={openUpgrade}>
+              {user.is_pro ? 'جزئیات اشتراک' : 'ارتقا به پرو'}
+            </Button>
+          </div>
+          {user.is_pro ? (
+            <p className="muted" style={{ fontSize: 12.5 }}>
+              {user.pro_until
+                ? `انتشار نامحدود در فید و انجمن‌ها، ارسال پیام و آمار کامل تا ${when(user.pro_until)} فعال است.`
+                : 'انتشار نامحدود و آمار کامل برای حساب شما فعال است.'}
+            </p>
+          ) : (
+            <>
+              <p className="muted" style={{ fontSize: 12.5 }}>
+                {user.quotas?.is_exempt
+                  ? 'حساب شما از محدودیت انتشار معاف است.'
+                  : 'میزان مصرف از سهمیه پایه رایگان:'}
+              </p>
+              {!user.quotas?.is_exempt && quotaItems.length > 0 && (
+                <div className="quota-list">
+                  {quotaItems.map((item) => {
+                    const limit = item.limit ?? 0
+                    const pct = limit > 0 ? Math.min(100, Math.round((item.used / limit) * 100)) : 0
+                    return (
+                      <div key={item.key} className="quota-row">
+                        <div className="quota-row-head">
+                          <span>{item.label}</span>
+                          <b className={item.exceeded ? 'is-full' : ''}>
+                            {limit > 0 ? `${faNum.format(item.used)} از ${faNum.format(limit)}` : faNum.format(item.used)}
+                          </b>
+                        </div>
+                        {limit > 0 && (
+                          <div className="quota-track">
+                            <div className={item.exceeded ? 'quota-fill is-full' : 'quota-fill'} style={{ width: `${pct}%` }} />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </>
+          )}
+        </section>
+
+        <h2 className="section-title section-title--tight">ابزارهای حرفه‌ای</h2>
+        <div className="card settings-card">
+          <SettingsRow
+            icon="insights"
+            tone="violet"
+            title="آمار و اینسایت"
+            sub={user.is_pro ? 'بازدیدها، تعامل‌ها و ترکیب مخاطبان' : 'خلاصه ۷ روزه · آمار کامل با پرو'}
+            to="/insights"
+          />
+          <SettingsRow
+            icon="briefcase"
+            tone="teal"
+            title="آماده همکاری (Open to Work)"
+            sub="نمایش نشان آماده همکاری در پروفایل شما"
+            trailing={(
+              <Toggle
+                label="آماده همکاری"
+                on={openToWork}
+                onChange={(next) => { setOpenToWork(next); savePrivacy({ open_to_work: next }) }}
+              />
+            )}
+          />
         </div>
 
-        <h2 className="section-title section-title--tight">وضعیت حرفه‌ای</h2>
+        <h2 className="section-title section-title--tight">فعالیت شما در طبیار</h2>
         <div className="card settings-card">
-          <div className="kv">
-            <span className="k">آماده همکاری (Open to Work)</span>
-            <Toggle
-              label="آماده همکاری"
-              on={openToWork}
-              onChange={(next) => { setOpenToWork(next); savePrivacy({ open_to_work: next }) }}
-            />
-          </div>
-          <p className="muted" style={{ fontSize: 12, marginTop: 6 }}>با فعال‌سازی این گزینه، نشان «آماده همکاری» روی پروفایل شما نمایش داده می‌شود.</p>
+          <SettingsRow icon="bookmark" tone="cobalt" title="ذخیره‌شده‌ها" sub="پست‌های نشانه‌گذاری‌شده" to="/bookmarks" />
+          <SettingsRow icon="direct" tone="teal" title="پیام‌ها و دایرکت" sub="گفتگوهای خصوصی و گروهی" to="/messages" />
+          <SettingsRow icon="bell" tone="amber" title="اعلان‌ها" sub="لایک‌ها، نظرها و وضعیت احراز" to="/notifications" />
+          <SettingsRow icon="explore" tone="violet" title="اکسپلور" sub="جست‌وجو و کشف پست‌های برگزیده" to="/explore" />
         </div>
 
-        <h2 className="section-title section-title--tight">حریم خصوصی</h2>
+        <h2 className="section-title section-title--tight">حریم خصوصی و اعلان‌ها</h2>
         <div className="card settings-card">
           <div className="kv kv-stack">
             <span className="k">چه کسی می‌تواند پیام بدهد</span>
@@ -742,51 +865,45 @@ export function Settings() {
           </div>
         </div>
 
-        <h2 className="section-title section-title--tight">محتوا و ناوبری</h2>
+        <h2 className="section-title section-title--tight">ظاهر و داده</h2>
         <div className="card settings-card">
-          <Link className="list-row" to="/profile/edit">
-            <Icon name="edit" />
-            <div className="body"><div className="title">ویرایش پروفایل</div><div className="sub">نام، بیو، شهر و تخصص</div></div>
-          </Link>
-          <Link className="list-row" to="/bookmarks">
-            <Icon name="bookmark" />
-            <div className="body"><div className="title">ذخیره‌شده‌ها</div><div className="sub">پست‌های بوکمارک‌شده</div></div>
-          </Link>
-          <Link className="list-row" to="/explore">
-            <Icon name="explore" />
-            <div className="body"><div className="title">اکسپلور</div><div className="sub">مرور همه پست‌ها</div></div>
-          </Link>
-          <Link className="list-row" to="/messages">
-            <Icon name="chat" />
-            <div className="body"><div className="title">پیام‌ها</div><div className="sub">گفتگوهای خصوصی و گروهی</div></div>
-          </Link>
-        </div>
-
-        <h2 className="section-title section-title--tight">داده و عملکرد</h2>
-        <div className="card settings-card">
-          <button
-            className="list-row"
-            type="button"
+          <SettingsRow
+            icon="sparkles"
+            tone="amber"
+            title="حالت تیره"
+            sub={dark ? 'پوسته شب فعال است' : 'پوسته روشن فعال است'}
+            trailing={(
+              <Toggle
+                label="تغییر تم"
+                on={dark}
+                onChange={(next) => {
+                  setDark(next)
+                  document.documentElement.dataset.theme = next ? 'dark' : 'light'
+                  localStorage.setItem('tebyar_theme', next ? 'dark' : '')
+                }}
+              />
+            )}
+          />
+          <SettingsRow
+            icon="trash"
+            tone="gray"
+            title="پاک‌کردن کش محلی"
+            sub="پاک‌سازی فید، انجمن‌ها و پیام‌های کش‌شده"
+            trailing={null}
             onClick={() => {
               const keys = Object.keys(sessionStorage).filter((key) => key.startsWith('tebyar-'))
               keys.forEach((key) => sessionStorage.removeItem(key))
               toast.show('حافظه موقت پاک شد', 'info')
             }}
-          >
-            <Icon name="trash" />
-            <div className="body"><div className="title">پاک‌کردن کش محلی</div><div className="sub">فید، انجمن‌ها و پیام‌های ذخیره‌شده در مرورگر</div></div>
-          </button>
+          />
         </div>
 
-        <h2 className="section-title section-title--tight">حساب</h2>
+        <h2 className="section-title section-title--tight">امنیت و حساب</h2>
         <div className="card settings-card">
-          <Link className="list-row" to="/pending">
-            <Icon name="shield" />
-            <div className="body"><div className="title">وضعیت احراز هویت</div><div className="sub">{user.status_label}</div></div>
-          </Link>
+          <SettingsRow icon="shield" tone="teal" title="وضعیت احراز هویت" sub={user.status_label} to="/pending" />
           {sessions.length > 0 && (
-            <div style={{ padding: '8px 4px', borderBottom: '1px solid var(--line)' }}>
-              <p className="muted" style={{ fontSize: 12, margin: '4px 0 8px' }}>نشست‌های فعال</p>
+            <div style={{ padding: '10px 2px', borderBottom: '1px solid var(--line)' }}>
+              <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>نشست‌های فعال</p>
               {sessions.map((session) => (
                 <div key={session.id} className="row between" style={{ padding: '6px 0' }}>
                   <div>
@@ -815,8 +932,8 @@ export function Settings() {
             </div>
           )}
           {blocks.length > 0 && (
-            <div style={{ padding: '8px 4px', borderBottom: '1px solid var(--line)' }}>
-              <p className="muted" style={{ fontSize: 12, margin: '4px 0 8px' }}>مسدودشده‌ها</p>
+            <div style={{ padding: '10px 2px', borderBottom: '1px solid var(--line)' }}>
+              <p className="muted" style={{ fontSize: 12, margin: '0 0 8px' }}>مسدودشده‌ها</p>
               {blocks.map((person) => person.id && (
                 <div key={person.id} className="row between" style={{ padding: '4px 0' }}>
                   <Person user={person} />
@@ -835,12 +952,15 @@ export function Settings() {
               ))}
             </div>
           )}
-          <button className="list-row" type="button" onClick={() => setSupportOpen((value) => !value)}>
-            <Icon name="chat" />
-            <div className="body"><div className="title">پشتیبانی</div><div className="sub">تیکت به تیم طبیار</div></div>
-          </button>
+          <SettingsRow
+            icon="chat"
+            tone="cobalt"
+            title="پشتیبانی طبیار"
+            sub="ثبت و پیگیری تیکت پشتیبانی"
+            onClick={() => setSupportOpen((value) => !value)}
+          />
           {supportOpen && (
-            <form className="stack" style={{ padding: '10px 4px' }} onSubmit={(event) => {
+            <form className="stack" style={{ padding: '10px 2px', borderBottom: '1px solid var(--line)' }} onSubmit={(event) => {
               event.preventDefault()
               const target = event.currentTarget
               const form = Object.fromEntries(new FormData(target).entries())
@@ -848,6 +968,7 @@ export function Settings() {
                 .then(() => {
                   target.reset()
                   setSupportOpen(false)
+                  loadTickets()
                   toast.show('درخواست پشتیبانی ثبت شد', 'success')
                 })
                 .catch((reason) => toast.show(errText(reason), 'error'))
@@ -858,21 +979,27 @@ export function Settings() {
             </form>
           )}
           {tickets.map((ticket) => (
-            <div key={ticket.id} className="muted" style={{ fontSize: 12, padding: '6px 4px' }}>
-              <b>{ticket.subject}</b> — {ticket.status}
+            <div key={ticket.id} className="row between" style={{ fontSize: 12.5, padding: '8px 2px', borderBottom: '1px solid var(--line)' }}>
+              <b>{ticket.subject}</b>
+              <span className="chip">{ticketStatusLabels[ticket.status] || ticket.status}</span>
             </div>
           ))}
-          <button className="list-row" type="button" onClick={() => setConfirmLogout(true)}>
-            <Icon name="xCircle" />
-            <div className="body"><div className="title" style={{ color: 'var(--danger)' }}>خروج از حساب</div><div className="sub">پایان نشست فعلی</div></div>
-          </button>
+          <SettingsRow
+            icon="xCircle"
+            tone="danger"
+            danger
+            title="خروج از حساب"
+            sub="پایان نشست فعلی روی این دستگاه"
+            trailing={null}
+            onClick={() => setConfirmLogout(true)}
+          />
         </div>
 
         <h2 className="section-title section-title--tight">درباره</h2>
         <div className="card settings-card">
           <div className="kv">
             <span className="k">نسخه وب</span>
-            <span className="muted">۰.۹ · طبیار</span>
+            <span className="muted">۱.۰ · طبیار</span>
           </div>
           <p className="muted" style={{ fontSize: 12, lineHeight: 1.7, marginTop: 8 }}>
             طبیار شبکه اجتماعی پزشکان است. محتوای بالینی نمایشی جایگزین تشخیص یا درمان نیست.

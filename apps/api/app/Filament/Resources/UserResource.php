@@ -6,12 +6,14 @@ use App\Filament\Access;
 use App\Filament\Labels;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\User;
+use App\Services\SubscriptionService;
 use App\Services\VerificationService;
 use App\Support\Present;
 use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
+use Filament\Forms\Components\TextInput;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Support\Icons\Heroicon;
@@ -87,6 +89,12 @@ class UserResource extends Resource
                     ->label('شهر')
                     ->placeholder('—')
                     ->toggleable(),
+                TextColumn::make('pro_until')
+                    ->label('پرو تا')
+                    ->badge()
+                    ->formatStateUsing(fn ($state): string => $state && $state->isFuture() ? $state->format('Y-m-d') : 'رایگان')
+                    ->color(fn ($state): string => $state && $state->isFuture() ? 'success' : 'gray')
+                    ->toggleable(),
                 TextColumn::make('created_at')
                     ->label('عضویت')
                     ->since()
@@ -144,6 +152,35 @@ class UserResource extends Resource
                     ->action(function (User $record, array $data): void {
                         $record->staff_role = $data['staff_role'] ?: null;
                         $record->save();
+                    }),
+                Action::make('pro')
+                    ->label('مدیریت پرو')
+                    ->icon(Heroicon::OutlinedSparkles)
+                    ->color('info')
+                    ->visible(fn (): bool => Access::allows(['admin']))
+                    ->schema([
+                        Select::make('mode')
+                            ->label('عملیات')
+                            ->options([
+                                'grant' => 'اعطای / تمدید اشتراک پرو',
+                                'revoke' => 'لغو اشتراک پرو',
+                            ])
+                            ->default('grant')
+                            ->required(),
+                        TextInput::make('months')
+                            ->label('مدت (ماه)')
+                            ->numeric()
+                            ->minValue(1)
+                            ->default(1),
+                        Textarea::make('note')->label('یادداشت'),
+                    ])
+                    ->action(function (User $record, array $data): void {
+                        $service = app(SubscriptionService::class);
+                        if (($data['mode'] ?? 'grant') === 'revoke') {
+                            $service->revoke($record, auth()->user(), $data['note'] ?? null);
+                        } else {
+                            $service->grant($record, auth()->user(), (int) ($data['months'] ?? 1), $data['note'] ?? null);
+                        }
                     }),
             ]);
     }

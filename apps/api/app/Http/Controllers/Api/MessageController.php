@@ -10,6 +10,7 @@ use App\Models\Conversation;
 use App\Models\Message;
 use App\Models\User;
 use App\Services\Alerts;
+use App\Support\Membership;
 use App\Support\Present;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -79,10 +80,22 @@ class MessageController extends Controller
 
         $one = min($viewer->id, $peer->id);
         $two = max($viewer->id, $peer->id);
-        $conversation = Conversation::query()->firstOrCreate(
-            ['user_one_id' => $one, 'user_two_id' => $two, 'type' => 'direct'],
-            ['last_message_at' => now()],
-        );
+        $existing = Conversation::query()
+            ->where('user_one_id', $one)
+            ->where('user_two_id', $two)
+            ->where('type', 'direct')
+            ->first();
+
+        if (! $existing || ! $existing->messages()->exists()) {
+            Membership::assertQuota($viewer, 'conversations');
+        }
+
+        $conversation = $existing ?? Conversation::query()->create([
+            'user_one_id' => $one,
+            'user_two_id' => $two,
+            'type' => 'direct',
+            'last_message_at' => now(),
+        ]);
         $conversation->ensureDirectParticipants();
         $conversation->load(['userOne', 'userTwo', 'participants.user']);
 
@@ -121,6 +134,7 @@ class MessageController extends Controller
         ]);
 
         $viewer = $request->user();
+        Membership::assertQuota($viewer, 'conversations');
         $memberIds = collect($data['user_ids'])->push($viewer->id)->unique()->values();
 
         $conversation = DB::transaction(function () use ($viewer, $data, $memberIds) {
@@ -197,6 +211,9 @@ class MessageController extends Controller
     public function store(Request $request, Conversation $conversation): JsonResponse
     {
         $this->guard($conversation, $request->user());
+        if (! $conversation->isGroup() && ! $conversation->messages()->exists()) {
+            Membership::assertQuota($request->user(), 'conversations');
+        }
         $data = $request->validate([
             'body' => ['nullable', 'string', 'max:4000'],
             'attachment' => ['nullable', 'file', 'max:20480'],

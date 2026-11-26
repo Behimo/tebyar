@@ -14,6 +14,23 @@ export type Entry = {
   year: string | null
 }
 
+export type QuotaKey = 'posts' | 'stories' | 'topics' | 'comments' | 'conversations'
+
+export type QuotaItem = {
+  key: QuotaKey
+  label: string
+  used: number
+  limit: number | null
+  remaining: number | null
+  exceeded: boolean
+}
+
+export type QuotaState = {
+  limits_enabled: boolean
+  is_exempt: boolean
+  items: Record<QuotaKey, QuotaItem>
+}
+
 export type UserCard = {
   id: number | null
   name: string
@@ -32,6 +49,7 @@ export type UserCard = {
   is_following: boolean
   is_self: boolean
   is_demo: boolean
+  is_pro?: boolean
   open_to_work?: boolean
   anonymous: boolean
   entries?: Entry[]
@@ -50,6 +68,9 @@ export type Me = UserCard & {
   notify_messages: boolean
   can_create_case: boolean
   can_create_poll: boolean
+  is_pro: boolean
+  pro_until: string | null
+  quotas?: QuotaState
   verification: { type: string; status: string; note: string | null } | null
   organization: {
     id: number
@@ -184,4 +205,112 @@ export type CommunityCard = {
   members_count: number
   topics_count: number
   following: boolean
+}
+
+export type ProPlan = {
+  slug: string
+  title: string
+  months: number
+  amount: number
+}
+
+export type SubscriptionRequest = {
+  id: number
+  plan: string
+  months: number
+  amount: number
+  status: string
+  status_label: string
+  reference: string | null
+  note: string | null
+  starts_at: string | null
+  ends_at: string | null
+  created_at: string | null
+}
+
+export type SubscriptionOverview = {
+  is_pro: boolean
+  pro_until: string | null
+  plans: ProPlan[]
+  payment_note: string
+  pending: SubscriptionRequest | null
+  history: SubscriptionRequest[]
+  quotas: QuotaState
+}
+
+export type MetricValue = {
+  value: number
+  previous: number
+  delta_pct: number | null
+}
+
+export type InsightsSeriesPoint = {
+  date: string
+  impressions: number
+  reach: number
+  engagements: number
+  followers: number
+  profile_views: number
+}
+
+export type InsightsOverview = {
+  range: 7 | 30 | 90
+  is_pro: boolean
+  summary: {
+    reach: MetricValue
+    impressions: MetricValue
+    engaged_accounts: MetricValue
+    engagements_total: MetricValue
+    followers_total: number
+    followers_new: MetricValue
+    profile_views: MetricValue
+    content_count: number
+  }
+  breakdown: {
+    likes: number
+    comments: number
+    bookmarks: number
+    reposts: number
+    topic_replies: number
+    poll_votes: number
+    story_views: number
+  }
+  series: InsightsSeriesPoint[]
+  top_posts: {
+    id: number
+    excerpt: string
+    cover_url: string | null
+    created_at: string | null
+    impressions: number
+    reach: number
+    engagements: number
+  }[] | null
+  audience: {
+    total_followers: number
+    roles: { label: string; count: number; percent: number }[]
+    specialties: { label: string; count: number; percent: number }[]
+    cities: { label: string; count: number; percent: number }[]
+  } | null
+}
+
+export type PostInsights = {
+  post: {
+    id: number
+    excerpt: string
+    cover_url: string | null
+    created_at: string | null
+  }
+  summary: {
+    impressions: number
+    reach: number
+    engagements: number
+    engagement_rate: number
+    likes: number
+    comments: number
+    bookmarks: number
+    reposts: number
+  }
+  sources: { source: string; label: string; count: number; percent: number }[]
+  roles: { label: string; count: number; percent: number }[]
+  series: { date: string; impressions: number; reach: number }[]
 }

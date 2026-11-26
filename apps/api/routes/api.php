@@ -3,11 +3,13 @@
 use App\Http\Controllers\Api\AuthController;
 use App\Http\Controllers\Api\CommunityController;
 use App\Http\Controllers\Api\InboxController;
+use App\Http\Controllers\Api\InsightsController;
 use App\Http\Controllers\Api\JobController;
 use App\Http\Controllers\Api\MediaController;
 use App\Http\Controllers\Api\MessageController;
 use App\Http\Controllers\Api\ProfileController;
 use App\Http\Controllers\Api\SocialController;
+use App\Http\Controllers\Api\SubscriptionController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->group(function () {
@@ -89,6 +91,13 @@ Route::prefix('v1')->group(function () {
             Route::post('jobs/{vacancy}/save', [JobController::class, 'save']);
             Route::delete('jobs/{vacancy}/save', [JobController::class, 'unsave']);
             Route::post('jobs/{vacancy}/apply', [JobController::class, 'apply']);
+
+            Route::get('subscription', [SubscriptionController::class, 'show']);
+            Route::post('subscription/requests', [SubscriptionController::class, 'store']);
+
+            Route::post('impressions', [InsightsController::class, 'impressions'])->middleware('throttle:impressions');
+            Route::get('me/insights', [InsightsController::class, 'overview']);
+            Route::get('posts/{post}/insights', [InsightsController::class, 'post']);
         });
 
         Route::middleware('employer')->group(function () {

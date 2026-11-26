@@ -3,12 +3,14 @@ import { useState } from 'react'
 import { Link, Navigate, Outlet, Route, Routes, useLocation, useNavigationType } from 'react-router-dom'
 import { motion } from 'motion/react'
 import { useAuth } from './auth'
+import { UpgradeSheet } from './pro'
 import { Sheet, Skel } from './ui'
 import { Icon } from './icons'
 import {
   Apply, Bookmarks, Employer, Jobs, JobPage, Join, Login, Notifications, Otp, Pending, Settings,
 } from './screens/account'
 import { CasePage, Communities, CommunityPage, Compose, Home, PollPage, PostPage, TopicPage } from './screens/social'
+import { InsightsPage, PostInsightsPage } from './screens/insights'
 import { Chat, DoctorPage, EditProfile, Explore, Messages, Profile } from './screens/talk'
 
 function Guest({ children }: { children: ReactNode }) {
@@ -101,6 +103,7 @@ function Shell() {
             </Link>
           )}
         </Sheet>
+        <UpgradeSheet />
       </div>
     </div>
   )
@@ -118,7 +121,7 @@ function Tab({ to, icon, label }: { to: string; icon: string; label: string }) {
           transition={{ type: 'spring', stiffness: 420, damping: 34 }}
         />
       )}
-      <Icon name={icon} />
+      <Icon name={icon} filled={active} />
       <span>{label}</span>
     </Link>
   )
@@ -153,6 +156,8 @@ export default function App() {
           <Route path="/jobs/:id/apply" element={<Apply />} />
           <Route path="/notifications" element={<Notifications />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/insights" element={<InsightsPage />} />
+          <Route path="/insights/posts/:id" element={<PostInsightsPage />} />
           <Route path="/bookmarks" element={<Bookmarks />} />
           <Route path="/employer" element={<Employer />} />
         </Route>
