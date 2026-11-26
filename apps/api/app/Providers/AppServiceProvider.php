@@ -8,6 +8,7 @@ use App\Services\Sms\LogSmsSender;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\ServiceProvider;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,6 +24,8 @@ class AppServiceProvider extends ServiceProvider
 
     public function boot(): void
     {
+        Schema::defaultStringLength(191);
+
         RateLimiter::for('otp', function (Request $request) {
             return Limit::perMinutes(10, 5)->by($request->ip().'|'.$request->input('phone'));
         });
