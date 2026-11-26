@@ -1,10 +1,28 @@
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { AnimatePresence, motion } from 'motion/react'
 import { api, assetUrl } from '../api'
 import { useAuth } from '../auth'
 import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
-import { Avatar, Badges, Empty, ListSkel, MentionBox, Person, PostCard, Sheet, Skel, Top, VerifiedSeal, errText } from '../ui'
+import {
+  Avatar,
+  Badges,
+  Button,
+  Empty,
+  Field,
+  ListSkel,
+  MentionBox,
+  Person,
+  PostCard,
+  Segmented,
+  Sheet,
+  Skel,
+  Top,
+  VerifiedSeal,
+  errText,
+  useToast,
+} from '../ui'
 import { ComposeMediaField as ComposeMediaPicker, CommentSheet, InstagramPostDetail } from '../post-ui'
 import { Brand, Icon } from '../icons'
 import { readCache, writeCache } from '../cache'
@@ -12,7 +30,6 @@ import { buildStoryTiles, mergeStoryLists, myStories } from '../stories'
 import { StoryStudio } from '../story-studio'
 
 const communitiesKey = 'tebyar-communities'
-
 const feedMemory: { suggested?: Post[]; following?: Post[]; stories?: Story[] } = {}
 const storiesKey = 'tebyar-stories'
 
@@ -182,21 +199,19 @@ function StoryReel({
       <div className="media"><img src={assetUrl(story.media_url) || story.media_url} alt="" onError={() => setNote('این تصویر روی گوشی باز نشد.')} /></div>
       <button className="story-hit story-hit-next" type="button" aria-label="بعدی" onClick={() => go(1)} />
       <button className="story-hit story-hit-prev" type="button" aria-label="قبلی" onClick={() => go(-1)} />
-      {menu && (
-        <Sheet front onClose={() => setMenu(false)}>
-          <button
-            className="sheet-item danger"
-            type="button"
-            onClick={() => {
-              const id = story.id
-              setMenu(false)
-              onDelete(id)
-            }}
-          >
-            <Icon name="trash" /> حذف استوری
-          </button>
-        </Sheet>
-      )}
+      <Sheet front open={menu} onClose={() => setMenu(false)}>
+        <button
+          className="sheet-item danger"
+          type="button"
+          onClick={() => {
+            const id = story.id
+            setMenu(false)
+            onDelete(id)
+          }}
+        >
+          <Icon name="trash" /> حذف استوری
+        </button>
+      </Sheet>
     </div>,
     document.body,
   )
@@ -208,7 +223,6 @@ export function Home() {
   const [stories, setStories] = useState<Story[]>(readStories)
   const [storiesLoaded, setStoriesLoaded] = useState(() => readStories().length > 0)
   const [loading, setLoading] = useState(() => readPosts('suggested') == null)
-  const [fresh, setFresh] = useState(false)
   const [error, setError] = useState('')
   const [reel, setReel] = useState<{ groups: Story[][]; group: number; index: number } | null>(null)
   const [storyUploading, setStoryUploading] = useState(false)
@@ -216,9 +230,11 @@ export function Home() {
   const [storyDraft, setStoryDraft] = useState<File | null>(null)
   const [commentId, setCommentId] = useState<number | null>(null)
   const { user } = useAuth()
+  const toast = useToast()
   const badges = useInboxBadges()
   const mine = myStories(stories, user)
   const feedGen = useRef(0)
+
   useEffect(() => {
     let gone = false
     const gen = ++feedGen.current
@@ -226,11 +242,9 @@ export function Home() {
     if (cached) {
       setPosts(cached)
       setLoading(false)
-      setFresh(false)
     } else {
       setPosts([])
       setLoading(true)
-      setFresh(true)
     }
     api<{ data: Post[] }>(`/feed?tab=${tab}`).then((feed) => {
       if (gone || gen !== feedGen.current) return
@@ -278,6 +292,7 @@ export function Home() {
       })
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
+      toast.show('استوری منتشر شد', 'success')
     } catch {
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
@@ -355,7 +370,7 @@ export function Home() {
           {tiles.map((story) => (
             <button
               key={story.id}
-              className={`story story-ring-in${story.unseen ? ' is-unseen' : story.items.length ? ' is-seen' : ''}`}
+              className={`story${story.unseen ? ' is-unseen' : story.items.length ? ' is-seen' : ''}`}
               type="button"
               onClick={() => {
                 if (story.items.length) {
@@ -368,14 +383,30 @@ export function Home() {
             </button>
           ))}
         </div>
-        <div className="filter-seg" role="tablist" aria-label="فیلتر فید">
-          <button className={tab === 'suggested' ? 'filter-seg-btn is-on' : 'filter-seg-btn'} type="button" role="tab" aria-selected={tab === 'suggested'} onClick={() => setTab('suggested')}>برای شما</button>
-          <button className={tab === 'following' ? 'filter-seg-btn is-on' : 'filter-seg-btn'} type="button" role="tab" aria-selected={tab === 'following'} onClick={() => setTab('following')}>دنبال‌شوندگان</button>
-        </div>
+
+        <Segmented
+          layoutId="home-feed-tab"
+          ariaLabel="فیلتر فید"
+          value={tab}
+          onChange={setTab}
+          options={[
+            { value: 'suggested', label: 'برای شما' },
+            { value: 'following', label: 'دنبال‌شوندگان' },
+          ]}
+        />
+
         {loading && posts.length === 0 && <Skel />}
-        {error && <div className="banner banner-danger">{error}</div>}
-        {!loading && posts.length === 0 && <Empty title="هنوز پستی نیست" text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را بنویسید." />}
-        <div className={fresh ? 'feed-in' : undefined}>
+        {error && <div className="banner banner-danger" style={{ margin: '0 14px 12px' }}>{error}</div>}
+        {!loading && posts.length === 0 && (
+          <Empty
+            icon="users"
+            title="هنوز پستی نیست"
+            text="همکارها را دنبال کنید یا اولین تجربه حرفه‌ای‌تان را منتشر کنید."
+            action={<Link className="btn btn-primary btn-sm" to="/explore">مشاهده اکسپلور</Link>}
+          />
+        )}
+
+        <div>
           {posts.map((post) => (
             <PostCard
               key={post.id}
@@ -395,6 +426,7 @@ export function Home() {
           ))}
         </div>
       </div>
+
       {reel && (
         <StoryReel
           groups={reel.groups}
@@ -448,27 +480,36 @@ export function Home() {
   )
 }
 
+const MAX_POST_CHARS = 2000
+
 export function Compose() {
   const navigate = useNavigate()
+  const { user } = useAuth()
+  const toast = useToast()
   const [body, setBody] = useState('')
   const [link, setLink] = useState('')
   const [title, setTitle] = useState('')
+  const [linkOpen, setLinkOpen] = useState(false)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const [slides, setSlides] = useState<import('../post-ui').ComposeSlide[]>([])
   const [coverIndex, setCoverIndex] = useState(0)
 
+  const canSubmit = (body.trim().length > 0 || slides.length > 0 || link.trim().length > 0) && body.length <= MAX_POST_CHARS
+
   const submit = async () => {
+    if (!canSubmit || busy) return
     setBusy(true)
     setError('')
     try {
       const form = new FormData()
-      if (body) form.set('body', body)
-      if (link) form.set('link_url', link)
-      if (title) form.set('link_title', title)
+      if (body.trim()) form.set('body', body.trim())
+      if (link.trim()) form.set('link_url', link.trim())
+      if (title.trim()) form.set('link_title', title.trim())
       slides.forEach((slide) => form.append('media[]', slide.file))
       form.set('cover_index', String(coverIndex))
       const created = await api<{ data: Post }>('/posts', { method: 'POST', body: form })
+      toast.show('پست شما منتشر شد', 'success')
       navigate(`/posts/${created.data.id}`)
     } catch (reason) {
       setError(errText(reason))
@@ -477,27 +518,95 @@ export function Compose() {
     }
   }
 
+  const counterClass = body.length > MAX_POST_CHARS
+    ? 'compose-counter is-over'
+    : body.length > MAX_POST_CHARS * 0.85
+      ? 'compose-counter is-near'
+      : 'compose-counter'
+
   return (
     <>
-      <Top title="انتشار" back action={<button className="icon-btn" type="button" aria-label="انتشار" disabled={busy} onClick={() => void submit()}><Icon name="send" /></button>} />
-      <form className="screen-body compose-studio" onSubmit={(event) => { event.preventDefault(); void submit() }}>
-        <ComposeMediaPicker slides={slides} coverIndex={coverIndex} onSlides={setSlides} onCover={setCoverIndex} />
-        <div className="compose-caption">
-          <MentionBox multiline className="area" value={body} onChange={setBody} placeholder="چه چیزی برای همکاران می‌نویسید؟ با @ منشن کنید" />
+      <Top title="پست جدید" back />
+      <form
+        className="screen-body compose-studio"
+        onSubmit={(event) => {
+          event.preventDefault()
+          void submit()
+        }}
+      >
+        {user && (
+          <div className="compose-author-bar">
+            <Person user={user} />
+            <span className="chip chip-teal">انتشار عمومی</span>
+          </div>
+        )}
+
+        <div className="compose-card">
+          <MentionBox
+            multiline
+            className="compose-textarea"
+            value={body}
+            onChange={setBody}
+            placeholder="تجربه، نکته علمی یا گفت‌وگو با همکاران... برای منشن @ و برای برچسب # بنویسید"
+          />
+          <div className="compose-foot-meta">
+            <span>پشتیبانی از @منشن و #هشتگ</span>
+            <span className={counterClass}>{body.length} / {MAX_POST_CHARS}</span>
+          </div>
         </div>
-        <details className="compose-extra">
-          <summary>لینک مقاله یا خبر</summary>
-          <input className="field" value={link} onChange={(event) => setLink(event.target.value)} placeholder="نشانی" />
-          <input className="field" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="عنوان لینک" />
-        </details>
+
+        <ComposeMediaPicker slides={slides} coverIndex={coverIndex} onSlides={setSlides} onCover={setCoverIndex} />
+
+        <div className="compose-card">
+          <button
+            type="button"
+            className={linkOpen ? 'compose-link-toggle is-open' : 'compose-link-toggle'}
+            onClick={() => setLinkOpen((v) => !v)}
+          >
+            <span className="row"><Icon name="link" /> افزودن لینک مقاله یا خبر</span>
+            <span className="chev" style={{ display: 'inline-flex' }}><Icon name="chevronDown" /></span>
+          </button>
+
+          <AnimatePresence initial={false}>
+            {linkOpen && (
+              <motion.div
+                className="stack"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: 'auto' }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+                style={{ overflow: 'hidden' }}
+              >
+                <input className="input ltr" value={link} onChange={(event) => setLink(event.target.value)} placeholder="https://..." />
+                <input className="input" value={title} onChange={(event) => setTitle(event.target.value)} placeholder="عنوان لینک (اختیاری)" />
+                {link.trim() && (
+                  <div className="post-link-card" style={{ margin: 0 }}>
+                    <span className="post-link-icon"><Icon name="external" /></span>
+                    <span className="post-link-body">
+                      <span className="post-link-title">{title.trim() || link.trim()}</span>
+                      <span className="post-link-host">{link.trim()}</span>
+                    </span>
+                  </div>
+                )}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
         {error && <div className="error">{error}</div>}
       </form>
+      <div className="sticky-submit-bar">
+        <Button variant="gradient" block loading={busy} disabled={!canSubmit} type="button" onClick={() => void submit()}>
+          <Icon name="send" /> انتشار پست
+        </Button>
+      </div>
     </>
   )
 }
 
 export function PostPage() {
   const { id } = useParams()
+  const toast = useToast()
   const [post, setPost] = useState<Post | null>(null)
   const [error, setError] = useState('')
 
@@ -508,7 +617,21 @@ export function PostPage() {
 
   return (
     <>
-      <Top title={post?.author.name || 'پست'} back action={<button className="text-btn" type="button" onClick={() => void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'post', id: Number(id), reason: 'other' }) })}>گزارش</button>} />
+      <Top
+        title={post?.author.name || 'پست'}
+        back
+        action={(
+          <button
+            className="text-btn"
+            type="button"
+            onClick={() => void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'post', id: Number(id), reason: 'other' }) })
+              .then(() => toast.show('گزارش شما ثبت شد', 'info'))
+              .catch((reason) => toast.show(errText(reason), 'error'))}
+          >
+            گزارش
+          </button>
+        )}
+      />
       <div className="screen-body post-detail-screen">
         {error && <div className="error pad">{error}</div>}
         {post && <InstagramPostDetail post={post} onChange={setPost} onRemove={() => history.back()} />}
@@ -541,12 +664,31 @@ export function Communities() {
       <div className="screen-body pad stack">
         {error && <div className="error">{error}</div>}
         {loading && items.length === 0 && <ListSkel rows={5} />}
-        {items.map((item) => (
-          <Link key={item.id} to={`/communities/${item.slug}`} className="card stack">
-            <div className="row between"><b>{item.name}</b><span className="chip">{item.specialty}</span></div>
-            <p className="muted">{item.description}</p>
-            <span className="faint">{item.members_count} عضو · {item.topics_count} موضوع</span>
-          </Link>
+        {items.map((item, idx) => (
+          <motion.div
+            key={item.id}
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.22, delay: Math.min(idx * 0.04, 0.24) }}
+          >
+            <Link to={`/communities/${item.slug}`} className="card stack">
+              <div className="community-card-head">
+                <div className="row">
+                  <span className="community-chip">{item.specialty.slice(0, 2)}</span>
+                  <div>
+                    <b style={{ display: 'block', fontSize: 15 }}>{item.name}</b>
+                    <span className="chip chip-blue" style={{ marginTop: 2 }}>{item.specialty}</span>
+                  </div>
+                </div>
+                {item.following && <span className="chip chip-teal"><Icon name="check" /> عضو</span>}
+              </div>
+              <p className="muted" style={{ fontSize: 13.5 }}>{item.description}</p>
+              <div className="community-meta-row">
+                <span><Icon name="users" /> {item.members_count} عضو</span>
+                <span><Icon name="chat" /> {item.topics_count} موضوع</span>
+              </div>
+            </Link>
+          </motion.div>
         ))}
       </div>
     </>
@@ -556,12 +698,14 @@ export function Communities() {
 export function CommunityPage() {
   const { slug } = useParams()
   const { user } = useAuth()
+  const toast = useToast()
   const cachedList = readCache<CommunityCard[]>(communitiesKey)
   const cachedCard = cachedList?.find((row) => row.slug === slug) ?? null
   const [card, setCard] = useState<CommunityCard | null>(cachedCard)
   const [topics, setTopics] = useState<Topic[]>([])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(!cachedCard)
+  const [followBusy, setFollowBusy] = useState(false)
 
   const load = () => {
     api<{ data: CommunityCard; topics: Topic[] }>(`/communities/${slug}`)
@@ -579,24 +723,51 @@ export function CommunityPage() {
         {loading && topics.length === 0 && <ListSkel rows={4} />}
         {card && (
           <div className="card stack">
-            <p>{card.description}</p>
-            <button className="btn" type="button" onClick={() => void api(`/communities/${slug}/follow`, { method: card.following ? 'DELETE' : 'POST' }).then(load)}>
-              {card.following ? 'دنبال می‌کنید' : 'دنبال کردن انجمن'}
-            </button>
+            <div className="row between">
+              <span className="chip chip-blue">{card.specialty}</span>
+              <span className="faint">{card.members_count} عضو · {card.topics_count} موضوع</span>
+            </div>
+            <p style={{ fontSize: 14, lineHeight: 1.75 }}>{card.description}</p>
+            <Button
+              variant={card.following ? 'ghost' : 'primary'}
+              block
+              loading={followBusy}
+              type="button"
+              onClick={() => {
+                setFollowBusy(true)
+                void api(`/communities/${slug}/follow`, { method: card.following ? 'DELETE' : 'POST' })
+                  .then(() => {
+                    toast.show(card.following ? 'انجمن آنفالو شد' : 'به انجمن پیوستید', 'info')
+                    load()
+                  })
+                  .finally(() => setFollowBusy(false))
+              }}
+            >
+              {card.following ? 'عضو انجمن هستید' : 'پیوستن به انجمن'}
+            </Button>
           </div>
         )}
-        <div className="row">
-          {user?.can_create_case && <Link className="btn" to={`/case?community=${slug}`}>طرح کیس</Link>}
-          {user?.can_create_poll && <Link className="btn" to={`/poll?community=${slug}`}>نظرسنجی</Link>}
-        </div>
+        {(user?.can_create_case || user?.can_create_poll) && (
+          <div className="two">
+            {user?.can_create_case && <Link className="btn btn-ghost" to={`/case?community=${slug}`}><Icon name="book" /> طرح کیس</Link>}
+            {user?.can_create_poll && <Link className="btn btn-ghost" to={`/poll?community=${slug}`}><Icon name="chart" /> نظرسنجی</Link>}
+          </div>
+        )}
+        {!loading && topics.length === 0 && (
+          <Empty icon="book" title="هنوز موضوعی نیست" text="اولین کیس یا نظرسنجی تخصصی این انجمن را ثبت کنید." />
+        )}
         {topics.map((topic) => (
           <Link key={topic.id} to={`/topics/${topic.id}`} className="card stack">
-            <div className="chips">
-              <span className="chip">{topic.kind === 'case' ? 'کیس' : topic.kind === 'poll' ? 'نظرسنجی' : 'بحث'}</span>
-              {topic.is_demo && <span className="chip coral">نمونه ساختگی</span>}
+            <div className="row between">
+              <div className="row">
+                <span className={topic.kind === 'case' ? 'chip chip-coral' : topic.kind === 'poll' ? 'chip chip-violet' : 'chip chip-blue'}>
+                  {topic.kind === 'case' ? 'کیس بالینی' : topic.kind === 'poll' ? 'نظرسنجی' : 'بحث'}
+                </span>
+                {topic.is_demo && <span className="chip">نمونه ساختگی</span>}
+              </div>
+              <span className="faint">{topic.reply_count ?? 0} پاسخ</span>
             </div>
-            <b>{topic.title}</b>
-            <span className="muted">{topic.reply_count} پاسخ</span>
+            <b style={{ fontSize: 15 }}>{topic.title}</b>
           </Link>
         ))}
       </div>
@@ -607,10 +778,12 @@ export function CommunityPage() {
 export function TopicPage() {
   const { id } = useParams()
   const { user } = useAuth()
+  const toast = useToast()
   const [topic, setTopic] = useState<Topic | null>(null)
   const [replies, setReplies] = useState<Reply[]>([])
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<{ id: number; name: string } | null>(null)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const replyInputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -628,35 +801,71 @@ export function TopicPage() {
 
   return (
     <>
-      <Top title="موضوع" back />
+      <Top title={topic?.community.name || 'موضوع'} back />
       <div className="screen-body pad stack">
         {error && <div className="error">{error}</div>}
         {topic && (
           <article className="card stack">
-            {topic.disclaimer && <div className="banner">{topic.disclaimer}</div>}
-            {topic.is_demo && <div className="banner calm">این نمونه ساختگی است و توصیه بالینی واقعی نیست.</div>}
-            <Person user={topic.author} />
-            <Badges user={topic.author} />
-            <h2>{topic.title}</h2>
-            <p style={{ lineHeight: 1.8 }}>{topic.body}</p>
+            {topic.disclaimer && (
+              <div className="banner banner-warn">
+                <Icon name="shield" />
+                <span>{topic.disclaimer}</span>
+              </div>
+            )}
+            {topic.is_demo && (
+              <div className="banner banner-success">
+                <Icon name="sparkles" />
+                <span>این نمونه ساختگی است و توصیه بالینی واقعی نیست.</span>
+              </div>
+            )}
+            <div className="row between">
+              <Person user={topic.author} />
+              <Badges user={topic.author} />
+            </div>
+            <h2 style={{ fontSize: 17.5 }}>{topic.title}</h2>
+            {topic.body && <p style={{ lineHeight: 1.85, fontSize: 14.2 }}>{topic.body}</p>}
             {topic.poll && (
               <div className="poll">
-                {topic.poll.options.map((option) => (
-                  <button key={option.id} type="button" disabled={!user?.can_create_poll} onClick={() => void api(`/topics/${id}/vote`, { method: 'POST', body: JSON.stringify({ option_id: option.id }) }).then(load)}>
-                    <i style={{ width: `${option.percent}%` }} />
-                    <span><b>{option.label}</b><em>{option.percent}٪</em></span>
-                  </button>
-                ))}
+                {topic.poll.options.map((option) => {
+                  const voted = topic.poll?.voted_option_id === option.id
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      className={voted ? 'poll-opt is-voted' : 'poll-opt'}
+                      disabled={!user?.can_create_poll}
+                      onClick={() => void api(`/topics/${id}/vote`, { method: 'POST', body: JSON.stringify({ option_id: option.id }) })
+                        .then(() => {
+                          toast.show('رأی شما ثبت شد', 'success')
+                          load()
+                        })
+                        .catch((reason) => toast.show(errText(reason), 'error'))}
+                    >
+                      <motion.i
+                        className="poll-opt-fill"
+                        initial={{ width: 0 }}
+                        animate={{ width: `${option.percent}%` }}
+                        transition={{ duration: 0.45, ease: [0.32, 0.72, 0, 1] }}
+                      />
+                      <span className="poll-opt-inner">
+                        <b>{option.label}{voted ? ' ✓' : ''}</b>
+                        <em>{option.percent}٪</em>
+                      </span>
+                    </button>
+                  )
+                })}
+                <span className="faint" style={{ marginTop: 2 }}>مجموع آرا: {topic.poll.total} رأی</span>
               </div>
             )}
           </article>
         )}
+
         {replies.map((reply) => {
           const thread = { id: reply.id, name: reply.author.name }
           return (
             <div key={reply.id} className="card stack">
               <Person user={reply.author} />
-              <p>{reply.body}</p>
+              <p style={{ fontSize: 14, lineHeight: 1.7 }}>{reply.body}</p>
               <div className="topic-reply-actions">
                 <button type="button" className="ig-reply-btn" onClick={() => pickReply(thread)}>پاسخ</button>
               </div>
@@ -682,28 +891,38 @@ export function TopicPage() {
             </div>
           )
         })}
-        <form className="stack" onSubmit={(event) => {
+
+        <form className="card stack" onSubmit={(event) => {
           event.preventDefault()
-          if (!text.trim()) return
+          if (!text.trim() || busy) return
+          setBusy(true)
           void api(`/topics/${id}/replies`, {
             method: 'POST',
             body: JSON.stringify(replyTo ? { body: text.trim(), parent_id: replyTo.id } : { body: text.trim() }),
-          }).then(() => { setText(''); setReplyTo(null); load() }).catch((reason) => setError(errText(reason)))
+          })
+            .then(() => {
+              setText('')
+              setReplyTo(null)
+              toast.show('پاسخ شما ثبت شد', 'success')
+              load()
+            })
+            .catch((reason) => setError(errText(reason)))
+            .finally(() => setBusy(false))
         }}>
           {replyTo && (
-            <div className="ig-reply-strip">
+            <div className="ig-reply-strip" style={{ borderRadius: 12 }}>
               <span>پاسخ به <b>{replyTo.name}</b></span>
               <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
             </div>
           )}
           <textarea
             ref={replyInputRef}
-            className="area"
+            className="textarea"
             value={text}
             onChange={(event) => setText(event.target.value)}
-            placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'پاسخ شما'}
+            placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'دیدگاه تخصصی خود را بنویسید...'}
           />
-          <button className="btn primary" type="submit">ارسال پاسخ</button>
+          <Button variant="primary" block loading={busy} disabled={!text.trim()} type="submit">ارسال پاسخ</Button>
         </form>
       </div>
     </>
@@ -720,51 +939,152 @@ export function PollPage() {
 
 function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
   const navigate = useNavigate()
+  const toast = useToast()
   const params = new URLSearchParams(window.location.search)
   const [slug, setSlug] = useState(params.get('community') || 'cardiology')
   const [communities, setCommunities] = useState<CommunityCard[]>([])
   const [options, setOptions] = useState(['', ''])
+  const [topicTitle, setTopicTitle] = useState('')
+  const [topicBody, setTopicBody] = useState('')
+  const [anonymous, setAnonymous] = useState(true)
+  const [disclaimerAccepted, setDisclaimerAccepted] = useState(false)
+  const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
   useEffect(() => {
     api<{ data: CommunityCard[] }>('/communities').then((payload) => setCommunities(payload.data)).catch(() => undefined)
   }, [])
 
+  const submit = (event: React.FormEvent) => {
+    event.preventDefault()
+    if (busy) return
+    const cleanOptions = options.map((o) => o.trim()).filter(Boolean)
+    if (kind === 'poll' && cleanOptions.length < 2) {
+      setError('حداقل دو گزینه برای نظرسنجی وارد کنید.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    const payload = {
+      kind,
+      title: topicTitle.trim(),
+      body: topicBody.trim(),
+      anonymous: kind === 'case' ? anonymous : false,
+      disclaimer_accepted: disclaimerAccepted,
+      options: kind === 'poll' ? cleanOptions : undefined,
+    }
+    void api<{ data: Topic }>(`/communities/${slug}/topics`, { method: 'POST', body: JSON.stringify(payload) })
+      .then((created) => {
+        toast.show(kind === 'case' ? 'کیس بالینی منتشر شد' : 'نظرسنجی منتشر شد', 'success')
+        navigate(`/topics/${created.data.id}`)
+      })
+      .catch((reason) => setError(errText(reason)))
+      .finally(() => setBusy(false))
+  }
+
   return (
     <>
       <Top title={title} back />
-      <form className="screen-body pad stack" onSubmit={(event) => {
-        event.preventDefault()
-        const form = new FormData(event.currentTarget)
-        const payload = {
-          kind,
-          title: String(form.get('title') || ''),
-          body: String(form.get('body') || ''),
-          anonymous: form.get('anonymous') === 'on',
-          disclaimer_accepted: form.get('disclaimer_accepted') === 'on',
-          options: kind === 'poll' ? options.filter(Boolean) : undefined,
-        }
-        void api<{ data: Topic }>(`/communities/${slug}/topics`, { method: 'POST', body: JSON.stringify(payload) })
-          .then((created) => navigate(`/topics/${created.data.id}`))
-          .catch((reason) => setError(errText(reason)))
-      }}>
-        <div className="banner">اطلاعات هویتی بیمار، چهره، کد ملی و شماره تماس را ننویسید. این فضا جایگزین ویزیت نیست.</div>
-        <label className="lbl">انجمن
-          <select className="select" value={slug} onChange={(event) => setSlug(event.target.value)}>
-            {communities.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
-          </select>
-        </label>
-        <input className="field" name="title" placeholder="عنوان" required />
-        <textarea className="area" name="body" placeholder="شرح بدون شناسه" required />
-        {kind === 'poll' && options.map((option, index) => (
-          <input key={index} className="field" value={option} placeholder={`گزینه ${index + 1}`} onChange={(event) => setOptions((list) => list.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} />
-        ))}
-        {kind === 'poll' && <button className="btn" type="button" onClick={() => setOptions((list) => [...list, ''])}>گزینه جدید</button>}
-        {kind === 'case' && <label className="check"><input name="anonymous" type="checkbox" defaultChecked /> انتشار بدون نام</label>}
-        <label className="check"><input name="disclaimer_accepted" type="checkbox" required /> می‌دانم این محتوا توصیه درمانی یا اجماع علمی نیست.</label>
+      <form id="topic-form" className="screen-body pad stack" style={{ paddingBottom: 100 }} onSubmit={submit}>
+        <div className="banner banner-warn">
+          <Icon name="shield" />
+          <span>اطلاعات هویتی بیمار، چهره، کد ملی و شماره تماس را ننویسید. این فضا جایگزین ویزیت نیست.</span>
+        </div>
+
+        <div className="card stack">
+          <Field label="انجمن تخصصی" htmlFor="topic-community">
+            <select id="topic-community" className="select" value={slug} onChange={(event) => setSlug(event.target.value)}>
+              {communities.map((item) => <option key={item.slug} value={item.slug}>{item.name}</option>)}
+            </select>
+          </Field>
+
+          <Field label="عنوان" htmlFor="topic-title">
+            <input
+              id="topic-title"
+              className="input"
+              value={topicTitle}
+              onChange={(e) => setTopicTitle(e.target.value)}
+              placeholder={kind === 'case' ? 'مثلاً بیمار ۵۴ ساله با درد قفسه سینه' : 'پرسش نظرسنجی تخصصی'}
+              required
+            />
+          </Field>
+
+          <Field label={kind === 'case' ? 'شرح بالینی بدون شناسه' : 'توضیح تکمیلی'} htmlFor="topic-body">
+            <textarea
+              id="topic-body"
+              className="textarea"
+              value={topicBody}
+              onChange={(e) => setTopicBody(e.target.value)}
+              placeholder={kind === 'case' ? 'یافته‌ها، علائم و سؤال بالینی بدون هیچ اطلاعات هویتی...' : 'زمینه و جزئیات نظرسنجی...'}
+              required
+            />
+          </Field>
+        </div>
+
+        {kind === 'poll' && (
+          <div className="card stack">
+            <div className="row between">
+              <b style={{ fontSize: 14 }}>گزینه‌های نظرسنجی</b>
+              <span className="faint">{options.length} از ۶</span>
+            </div>
+            <AnimatePresence initial={false}>
+              {options.map((option, index) => (
+                <motion.div
+                  key={index}
+                  className="poll-option-row"
+                  initial={{ opacity: 0, y: -6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18 }}
+                >
+                  <input
+                    className="input"
+                    value={option}
+                    placeholder={`گزینه ${index + 1}`}
+                    required={index < 2}
+                    onChange={(event) => setOptions((list) => list.map((item, i) => (i === index ? event.target.value : item)))}
+                  />
+                  {options.length > 2 && (
+                    <button
+                      type="button"
+                      className="poll-option-remove"
+                      aria-label={`حذف گزینه ${index + 1}`}
+                      onClick={() => setOptions((list) => list.filter((_, i) => i !== index))}
+                    >
+                      <Icon name="trash" />
+                    </button>
+                  )}
+                </motion.div>
+              ))}
+            </AnimatePresence>
+            {options.length < 6 && (
+              <Button variant="ghost" block type="button" onClick={() => setOptions((list) => [...list, ''])}>
+                <Icon name="plus" /> افزودن گزینه جدید
+              </Button>
+            )}
+          </div>
+        )}
+
+        <div className="stack">
+          {kind === 'case' && (
+            <label className="check">
+              <input type="checkbox" checked={anonymous} onChange={(e) => setAnonymous(e.target.checked)} />
+              <span>انتشار بدون نام (نام شما نمایش داده نمی‌شود)</span>
+            </label>
+          )}
+          <label className="check">
+            <input type="checkbox" checked={disclaimerAccepted} onChange={(e) => setDisclaimerAccepted(e.target.checked)} required />
+            <span>می‌دانم این محتوا توصیه درمانی یا اجماع علمی نیست.</span>
+          </label>
+        </div>
+
         {error && <div className="error">{error}</div>}
-        <button className="btn primary full" type="submit">انتشار</button>
       </form>
+      <div className="sticky-submit-bar">
+        <Button variant="primary" block loading={busy} type="submit" form="topic-form">
+          <Icon name="send" /> انتشار {kind === 'case' ? 'کیس' : 'نظرسنجی'}
+        </Button>
+      </div>
     </>
   )
 }

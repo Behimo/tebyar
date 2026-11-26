@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
+import { AnimatePresence, motion } from 'motion/react'
 import { api, when } from './api'
 import { useAuth } from './auth'
 import type { Comment, Post } from './types'
-import { Avatar, ListSkel, MediaCarousel, MentionBox, MentionText, Person, PostOwnerActions, VerifiedSeal, postCover, PostCard, errText } from './ui'
+import { Avatar, ListSkel, MediaCarousel, MentionBox, MentionText, Person, PostOwnerActions, VerifiedSeal, postCover, PostCard, errText, useToast } from './ui'
 import { Icon } from './icons'
 
 const faCount = new Intl.NumberFormat('fa-IR')
@@ -81,13 +83,13 @@ export function CommentSheet({
   onChange?: (post: Post) => void
 }) {
   const { user } = useAuth()
+  const toast = useToast()
   const [post, setPost] = useState<Post | null>(null)
   const [loading, setLoading] = useState(false)
   const [text, setText] = useState('')
   const [replyTo, setReplyTo] = useState<ReplyTarget | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [visible, setVisible] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
@@ -99,8 +101,6 @@ export function CommentSheet({
       .then((payload) => setPost(payload.data))
       .catch((reason) => setError(errText(reason)))
       .finally(() => setLoading(false))
-    requestAnimationFrame(() => setVisible(true))
-    return () => setVisible(false)
   }, [open, postId])
 
   const reload = () => {
@@ -116,69 +116,92 @@ export function CommentSheet({
     requestAnimationFrame(() => inputRef.current?.focus())
   }
 
-  if (!open) return null
-
-  return (
-    <div className={`comment-sheet-overlay${visible ? ' is-open' : ''}`} onClick={onClose} role="presentation">
-      <div className={`comment-sheet${visible ? ' is-open' : ''}`} onClick={(event) => event.stopPropagation()}>
-        <span className="comment-sheet-handle" aria-hidden="true" />
-        <header className="comment-sheet-head">
-          <div className="comment-sheet-title">
-            <h2>نظرات</h2>
-            {post && post.comments_count > 0 && <span className="chip chip-blue">{faCount.format(post.comments_count)}</span>}
-          </div>
-          <button className="icon-btn" type="button" aria-label="بستن" onClick={onClose}><Icon name="close" /></button>
-        </header>
-        <div className="comment-sheet-body">
-          {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
-          {loading && !post && <ListSkel rows={4} />}
-          {post?.comments?.map((comment) => (
-            <IgCommentBlock key={comment.id} comment={comment} onReplyToThread={pickReply} />
-          ))}
-          {!loading && post && (post.comments?.length ?? 0) === 0 && (
-            <div className="ig-post-empty">هنوز نظری ثبت نشده است — اولین نفر باشید.</div>
-          )}
-        </div>
-        <form
-          className="comment-sheet-compose"
-          onSubmit={(event) => {
-            event.preventDefault()
-            if (!postId || !text.trim() || busy) return
-            setBusy(true)
-            setError('')
-            void api(`/posts/${postId}/comments`, {
-              method: 'POST',
-              body: JSON.stringify(replyTo ? { body: text.trim(), parent_id: replyTo.id } : { body: text.trim() }),
-            })
-              .then(() => { setText(''); setReplyTo(null); reload() })
-              .catch((reason) => setError(errText(reason)))
-              .finally(() => setBusy(false))
-          }}
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className="comment-sheet-overlay"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={onClose}
+          role="presentation"
         >
-          {replyTo && (
-            <div className="ig-reply-strip">
-              <span>پاسخ به <b>{replyTo.name}</b></span>
-              <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
+          <motion.div
+            className="comment-sheet"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="comment-sheet-handle" aria-hidden="true" />
+            <header className="comment-sheet-head">
+              <div className="comment-sheet-title">
+                <h2>نظرات</h2>
+                {post && post.comments_count > 0 && <span className="chip chip-blue">{faCount.format(post.comments_count)}</span>}
+              </div>
+              <button className="icon-btn" type="button" aria-label="بستن" onClick={onClose}><Icon name="close" /></button>
+            </header>
+            <div className="comment-sheet-body">
+              {error && <div className="error" style={{ marginBottom: 10 }}>{error}</div>}
+              {loading && !post && <ListSkel rows={4} />}
+              {post?.comments?.map((comment) => (
+                <IgCommentBlock key={comment.id} comment={comment} onReplyToThread={pickReply} />
+              ))}
+              {!loading && post && (post.comments?.length ?? 0) === 0 && (
+                <div className="ig-post-empty">هنوز نظری ثبت نشده است — اولین نفر باشید.</div>
+              )}
             </div>
-          )}
-          <div className="ig-compose-row">
-            {user && <Avatar user={user} small />}
-            <div className="ig-compose-pill">
-              <MentionBox
-                inputRef={inputRef}
-                className="ig-compose-input"
-                value={text}
-                onChange={setText}
-                placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'نظر خود را بنویسید... (@ منشن)'}
-              />
-              <button className="ig-compose-send" type="submit" disabled={busy || !text.trim()} aria-label="ارسال نظر">
-                <Icon name="send" />
-              </button>
-            </div>
-          </div>
-        </form>
-      </div>
-    </div>
+            <form
+              className="comment-sheet-compose"
+              onSubmit={(event) => {
+                event.preventDefault()
+                if (!postId || !text.trim() || busy) return
+                setBusy(true)
+                setError('')
+                void api(`/posts/${postId}/comments`, {
+                  method: 'POST',
+                  body: JSON.stringify(replyTo ? { body: text.trim(), parent_id: replyTo.id } : { body: text.trim() }),
+                })
+                  .then(() => {
+                    setText('')
+                    setReplyTo(null)
+                    reload()
+                    toast.show('نظر شما ثبت شد', 'success')
+                  })
+                  .catch((reason) => setError(errText(reason)))
+                  .finally(() => setBusy(false))
+              }}
+            >
+              {replyTo && (
+                <div className="ig-reply-strip">
+                  <span>پاسخ به <b>{replyTo.name}</b></span>
+                  <button type="button" className="text-btn" onClick={() => setReplyTo(null)}>انصراف</button>
+                </div>
+              )}
+              <div className="ig-compose-row">
+                {user && <Avatar user={user} small />}
+                <div className="ig-compose-pill">
+                  <MentionBox
+                    inputRef={inputRef}
+                    className="ig-compose-input"
+                    value={text}
+                    onChange={setText}
+                    placeholder={replyTo ? `پاسخ به ${replyTo.name}...` : 'نظر خود را بنویسید... (@ منشن)'}
+                  />
+                  <button className="ig-compose-send" type="submit" disabled={busy || !text.trim()} aria-label="ارسال نظر">
+                    <Icon name="send" />
+                  </button>
+                </div>
+              </div>
+            </form>
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
   )
 }
 
@@ -189,43 +212,41 @@ export function CommentRow({ comment }: { comment: Comment }) {
 function IgPostToolbar({
   post,
   saved,
-  setSaved,
+  onSave,
   onLike,
   onRepost,
 }: {
   post: Post
   saved: boolean
-  setSaved: (next: boolean) => void
+  onSave: () => void
   onLike: () => void
   onRepost: () => void
 }) {
   return (
     <section className="ig-post-toolbar">
       <div className="ig-post-actions">
-        <button className={post.reacted ? 'ig-act like is-on' : 'ig-act like'} type="button" onClick={onLike} aria-pressed={post.reacted}>
+        <motion.button whileTap={{ scale: 0.88 }} className={post.reacted ? 'ig-act like is-on' : 'ig-act like'} type="button" onClick={onLike} aria-pressed={post.reacted}>
           <Icon name="heart" filled={post.reacted} />
           {post.reactions_count > 0 && <span>{faCount.format(post.reactions_count)}</span>}
-        </button>
+        </motion.button>
         <button className="ig-act" type="button" onClick={() => document.getElementById('comments')?.scrollIntoView({ behavior: 'smooth' })} aria-label="نظرات">
           <Icon name="comment" filled={false} />
           {post.comments_count > 0 && <span>{faCount.format(post.comments_count)}</span>}
         </button>
-        <button className="ig-act" type="button" onClick={onRepost} aria-label="بازنشر">
+        <motion.button whileTap={{ scale: 0.88 }} className="ig-act" type="button" onClick={onRepost} aria-label="بازنشر">
           <Icon name="repost" />
           {post.reposts_count > 0 && <span>{faCount.format(post.reposts_count)}</span>}
-        </button>
-        <button
+        </motion.button>
+        <motion.button
+          whileTap={{ scale: 0.88 }}
           className={saved ? 'ig-act bookmark is-on' : 'ig-act bookmark'}
           type="button"
           aria-label="ذخیره"
           aria-pressed={saved}
-          onClick={() => {
-            setSaved(!saved)
-            void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
-          }}
+          onClick={onSave}
         >
           <Icon name="bookmark" filled={saved} />
-        </button>
+        </motion.button>
       </div>
       {post.body && (
         <p className="ig-post-caption">
@@ -237,7 +258,6 @@ function IgPostToolbar({
   )
 }
 
-/** صفحهٔ پست — چیدمان شبیه اینستاگرام */
 export function InstagramPostDetail({
   post,
   onChange,
@@ -248,6 +268,7 @@ export function InstagramPostDetail({
   onRemove?: () => void
 }) {
   const { user } = useAuth()
+  const toast = useToast()
   const [saved, setSaved] = useState(post.bookmarked)
   useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
   const [text, setText] = useState('')
@@ -262,12 +283,32 @@ export function InstagramPostDetail({
   }
 
   const toggleLike = () => {
-    void api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' }).then((payload) => onChange(payload.data))
+    void api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' })
+      .then((payload) => onChange(payload.data))
+      .catch((reason) => toast.show(errText(reason), 'error'))
   }
 
   const repost = () => {
     void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) })
-      .then(() => onChange({ ...post, reposts_count: post.reposts_count + 1 }))
+      .then(() => {
+        onChange({ ...post, reposts_count: post.reposts_count + 1 })
+        toast.show('بازنشر شد', 'success')
+      })
+      .catch((reason) => toast.show(errText(reason), 'error'))
+  }
+
+  const save = () => {
+    const next = !saved
+    setSaved(next)
+    void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
+      .then(() => {
+        onChange({ ...post, bookmarked: next })
+        toast.show(next ? 'ذخیره شد' : 'از ذخیره‌شده‌ها برداشته شد', 'info')
+      })
+      .catch((reason) => {
+        setSaved(!next)
+        toast.show(errText(reason), 'error')
+      })
   }
 
   const pickReply = (target: ReplyTarget) => {
@@ -286,7 +327,7 @@ export function InstagramPostDetail({
           <PostOwnerActions post={post} onChange={onChange} onRemove={onRemove} />
         </header>
         {hasMedia && <MediaCarousel post={post} className="ig-post-media" />}
-        <IgPostToolbar post={post} saved={saved} setSaved={setSaved} onLike={toggleLike} onRepost={repost} />
+        <IgPostToolbar post={post} saved={saved} onSave={save} onLike={toggleLike} onRepost={repost} />
         <div className="ig-post-feed" id="comments">
           {post.comments_count > 0 && (
             <p className="ig-post-count">{faCount.format(post.comments_count)} نظر</p>
@@ -320,6 +361,7 @@ export function InstagramPostDetail({
               setText('')
               setReplyTo(null)
               reload()
+              toast.show('نظر شما ثبت شد', 'success')
             })
             .catch((reason) => setError(errText(reason)))
             .finally(() => setBusy(false))
@@ -416,7 +458,7 @@ export function PostViewer({
     <div className="post-viewer">
       <header className="post-viewer-head">
         <button className="icon-btn" type="button" aria-label="بستن" onClick={onClose}><Icon name="back" /></button>
-        <span>اکسپلور</span>
+        <span style={{ fontWeight: 700 }}>اکسپلور</span>
       </header>
       <div ref={trackRef} className="post-viewer-scroll">
         {items.map((post) => (
@@ -457,15 +499,18 @@ export function ComposeMediaField({
     if (!list) return
     const next = [...slides]
     for (const file of Array.from(list)) {
-      next.push({ id: `${Date.now()}-${file.name}`, file, preview: URL.createObjectURL(file) })
+      next.push({ id: `${Date.now()}-${Math.random()}-${file.name}`, file, preview: URL.createObjectURL(file) })
     }
     onSlides(next.slice(0, 6))
   }
 
   const remove = (id: string) => {
-    const row = slides.find((item) => item.id === id)
+    const idx = slides.findIndex((item) => item.id === id)
+    const row = slides[idx]
     if (row) URL.revokeObjectURL(row.preview)
-    onSlides(slides.filter((item) => item.id !== id))
+    const next = slides.filter((item) => item.id !== id)
+    onSlides(next)
+    if (coverIndex >= next.length) onCover(Math.max(0, next.length - 1))
   }
 
   const active = slides[coverIndex] ?? slides[0]
@@ -476,37 +521,61 @@ export function ComposeMediaField({
   return (
     <div className="compose-picker">
       {active ? (
-        <div className="compose-stage">
+        <motion.div
+          key={active.id}
+          className="compose-stage"
+          initial={{ opacity: 0.6, scale: 0.98 }}
+          animate={{ opacity: 1, scale: 1 }}
+          transition={{ duration: 0.2 }}
+        >
           {active.file.type.startsWith('video')
             ? <video src={active.preview} controls playsInline />
             : <img src={active.preview} alt="" />}
-        </div>
+        </motion.div>
       ) : (
         <label className="compose-stage compose-stage-empty">
-          <strong>انتخاب عکس</strong>
-          <span>تا ۶ تصویر، اولی کاور فید است</span>
+          <span className="compose-stage-empty-icon"><Icon name="image" /></span>
+          <strong>افزودن تصویر یا ویدیو</strong>
+          <span>تا ۶ فایل رسانه — اسلاید انتخابی کاور فید خواهد بود</span>
           {fileInput}
         </label>
       )}
-      <div className="compose-film">
-        {slides.map((slide, index) => (
-          <button
-            key={slide.id}
-            type="button"
-            className={index === coverIndex ? 'compose-thumb is-cover' : 'compose-thumb'}
-            onClick={() => onCover(index)}
-          >
-            <img src={slide.preview} alt="" />
-            <span className="remove" role="button" tabIndex={-1} onClick={(event) => { event.stopPropagation(); remove(slide.id) }}>×</span>
-          </button>
-        ))}
-        {slides.length > 0 && slides.length < 6 && (
-          <label className="compose-add-tile">
-            +
-            {fileInput}
-          </label>
-        )}
-      </div>
+      {slides.length > 0 && (
+        <div className="compose-film">
+          <AnimatePresence>
+            {slides.map((slide, index) => (
+              <motion.button
+                key={slide.id}
+                type="button"
+                layout
+                initial={{ opacity: 0, scale: 0.85 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className={index === coverIndex ? 'compose-thumb is-cover' : 'compose-thumb'}
+                onClick={() => onCover(index)}
+              >
+                <img src={slide.preview} alt="" />
+                {index === coverIndex && <span className="cover-tag">کاور</span>}
+                <span
+                  className="remove"
+                  role="button"
+                  tabIndex={-1}
+                  aria-label="حذف فایل"
+                  onClick={(event) => { event.stopPropagation(); remove(slide.id) }}
+                >
+                  ×
+                </span>
+              </motion.button>
+            ))}
+          </AnimatePresence>
+          {slides.length < 6 && (
+            <label className="compose-add-tile" aria-label="افزودن فایل بیشتر">
+              +
+              {fileInput}
+            </label>
+          )}
+        </div>
+      )}
     </div>
   )
 }

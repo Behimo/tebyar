@@ -2,10 +2,11 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { BrowserRouter } from 'react-router-dom'
 import { Capacitor } from '@capacitor/core'
+import { MotionConfig } from 'motion/react'
 import { AuthProvider } from './auth'
+import { ToastProvider } from './ui'
 import App from './App'
 import './tebyar.css'
-import './index.css'
 
 const savedTheme = localStorage.getItem('tebyar_theme')
 document.documentElement.dataset.theme = savedTheme === 'dark' ? 'dark' : 'light'
@@ -34,10 +35,14 @@ if (Capacitor.isNativePlatform()) {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <BrowserRouter>
-      <AuthProvider>
-        <App />
-      </AuthProvider>
-    </BrowserRouter>
+    <MotionConfig reducedMotion="user">
+      <BrowserRouter>
+        <AuthProvider>
+          <ToastProvider>
+            <App />
+          </ToastProvider>
+        </AuthProvider>
+      </BrowserRouter>
+    </MotionConfig>
   </StrictMode>,
 )

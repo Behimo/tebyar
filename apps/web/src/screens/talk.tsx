@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { motion } from 'motion/react'
 import { api, when } from '../api'
 import { readCache, writeCache } from '../cache'
 import { useAuth } from '../auth'
 import { Icon } from '../icons'
 import type { ChatMessage, CommunityCard, Conversation, Me, Post, Topic, UserCard } from '../types'
-import { Avatar, Empty, ListSkel, Sheet, Top, VerifiedSeal, errText } from '../ui'
+import { Avatar, Button, ConfirmSheet, Empty, Field, ListSkel, Sheet, Top, VerifiedSeal, errText, useToast } from '../ui'
 import { PostGrid, PostViewer } from '../post-ui'
 import { realtime } from '../realtime'
 
@@ -27,6 +28,7 @@ const entryLabels: Record<string, string> = {
 export function Messages() {
   const navigate = useNavigate()
   const { user } = useAuth()
+  const toast = useToast()
   const [items, setItems] = useState<Conversation[]>(() => readCache<Conversation[]>(conversationsKey) ?? [])
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(() => readCache<Conversation[]>(conversationsKey) == null)
@@ -39,6 +41,7 @@ export function Messages() {
   const [memberQuery, setMemberQuery] = useState('')
   const [memberHits, setMemberHits] = useState<UserCard[]>([])
   const [picked, setPicked] = useState<UserCard[]>([])
+  const [groupBusy, setGroupBusy] = useState(false)
 
   const load = () => {
     void api<{ data: Conversation[] }>('/conversations').then((payload) => {
@@ -122,107 +125,126 @@ export function Messages() {
         </div>
         {error && <div className="error">{error}</div>}
         {loading && items.length === 0 && <ListSkel rows={8} />}
-        {!loading && filtered.length === 0 && <Empty title="پیامی نیست" text="گفتگوهای خصوصی و گروهی اینجا فهرست می‌شوند." />}
-        {filtered.map((item) => (
-          <button
-            key={item.id}
-            className="list-row"
-            type="button"
-            onPointerDown={() => {
-              void api<{ data: ChatMessage[]; peer: UserCard | null; conversation: Conversation }>(`/conversations/${item.id}/messages`)
-                .then((payload) => writeCache(chatKey(String(item.id)), payload))
-                .catch(() => undefined)
-            }}
-            onClick={() => navigate(`/messages/${item.id}`)}
-          >
-            <Avatar user={rowAvatar(item)} />
-            <div className="body">
-              <div className="title">{rowTitle(item)}{item.type === 'group' && <span className="muted"> · گروه</span>}</div>
-              <div className="sub">{item.last_message?.body || '—'}</div>
-            </div>
-            <span className="time">{item.last_message?.created_at ? when(item.last_message.created_at) : ''}</span>
-            {item.unread && <span className="unread-dot" aria-label="خوانده‌نشده" />}
-          </button>
-        ))}
+        {!loading && filtered.length === 0 && (
+          <Empty
+            icon="chat"
+            title="پیامی نیست"
+            text="گفتگوهای خصوصی و گروهی با همکاران اینجا نمایش داده می‌شوند."
+            action={<Button variant="primary" size="sm" onClick={() => setDmOpen(true)}>شروع گفت‌وگو</Button>}
+          />
+        )}
+        <div className="card" style={{ padding: filtered.length > 0 ? '4px 10px' : 0, display: filtered.length > 0 ? 'block' : 'none' }}>
+          {filtered.map((item) => (
+            <button
+              key={item.id}
+              className="list-row"
+              type="button"
+              onPointerDown={() => {
+                void api<{ data: ChatMessage[]; peer: UserCard | null; conversation: Conversation }>(`/conversations/${item.id}/messages`)
+                  .then((payload) => writeCache(chatKey(String(item.id)), payload))
+                  .catch(() => undefined)
+              }}
+              onClick={() => navigate(`/messages/${item.id}`)}
+            >
+              <Avatar user={rowAvatar(item)} />
+              <div className="body">
+                <div className="title">{rowTitle(item)}{item.type === 'group' && <span className="chip chip-blue">گروه</span>}</div>
+                <div className="sub">{item.last_message?.body || 'بدون پیام'}</div>
+              </div>
+              <span className="time">{item.last_message?.created_at ? when(item.last_message.created_at) : ''}</span>
+              {item.unread && <span className="unread-dot" aria-label="خوانده‌نشده" />}
+            </button>
+          ))}
+        </div>
       </div>
-      {dmOpen && (
-        <Sheet onClose={() => setDmOpen(false)}>
-          <div className="stack">
-            <h2>پیام شخصی جدید</h2>
-            <input className="input" value={dmQuery} onChange={(event) => setDmQuery(event.target.value)} placeholder="جست‌وجوی نام، تخصص یا شهر همکار..." autoFocus />
-            {dmHits.length === 0 && <p className="muted">همکاری پیدا نشد. نام همکار را جست‌وجو کنید.</p>}
-            {dmHits.map((doctor) => (
-              <button
-                key={doctor.id}
-                className="list-row"
-                type="button"
-                onClick={() => {
-                  if (!doctor.id) return
-                  void api<{ data: Conversation }>('/conversations', {
-                    method: 'POST',
-                    body: JSON.stringify({ user_id: doctor.id }),
-                  }).then((payload) => {
-                    setDmOpen(false)
-                    setDmQuery('')
-                    navigate(`/messages/${payload.data.id}`)
-                  }).catch((reason) => {
-                    setDmOpen(false)
-                    setError(errText(reason))
-                  })
-                }}
-              >
-                <Avatar user={doctor} />
-                <div className="body">
-                  <div className="title">{doctor.name}</div>
-                  <div className="sub">{doctor.specialty_title || doctor.role_label}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
-      {groupOpen && (
-        <Sheet onClose={() => setGroupOpen(false)}>
-          <div className="stack">
-            <h2>گروه جدید</h2>
-            <input className="input" value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder="نام گروه" />
-            <input className="input" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="جست‌وجو بین دنبال‌کننده‌ها و دنبال‌شده‌ها" />
-            {memberHits.length === 0 && <p className="muted">کسی در دنبال‌کردن‌های شما پیدا نشد.</p>}
-            {memberHits.map((doctor) => (
+
+      <Sheet open={dmOpen} onClose={() => setDmOpen(false)}>
+        <div className="stack">
+          <h2>پیام شخصی جدید</h2>
+          <input className="input" value={dmQuery} onChange={(event) => setDmQuery(event.target.value)} placeholder="جست‌وجوی نام، تخصص یا شهر همکار..." autoFocus />
+          {dmHits.length === 0 && <p className="muted center" style={{ padding: 12 }}>همکاری پیدا نشد. نام همکار را جست‌وجو کنید.</p>}
+          {dmHits.map((doctor) => (
+            <button
+              key={doctor.id}
+              className="list-row"
+              type="button"
+              onClick={() => {
+                if (!doctor.id) return
+                void api<{ data: Conversation }>('/conversations', {
+                  method: 'POST',
+                  body: JSON.stringify({ user_id: doctor.id }),
+                }).then((payload) => {
+                  setDmOpen(false)
+                  setDmQuery('')
+                  navigate(`/messages/${payload.data.id}`)
+                }).catch((reason) => {
+                  setDmOpen(false)
+                  toast.show(errText(reason), 'error')
+                })
+              }}
+            >
+              <Avatar user={doctor} />
+              <div className="body">
+                <div className="title">{doctor.name}</div>
+                <div className="sub">{doctor.specialty_title || doctor.role_label}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Sheet>
+
+      <Sheet open={groupOpen} onClose={() => setGroupOpen(false)}>
+        <div className="stack">
+          <h2>گروه جدید</h2>
+          <input className="input" value={groupTitle} onChange={(event) => setGroupTitle(event.target.value)} placeholder="نام گروه" />
+          <input className="input" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="جست‌وجو بین دنبال‌کننده‌ها و دنبال‌شده‌ها" />
+          {memberHits.length === 0 && <p className="muted center">کسی در دنبال‌کردن‌های شما پیدا نشد.</p>}
+          {memberHits.map((doctor) => {
+            const selected = picked.some((row) => row.id === doctor.id)
+            return (
               <button
                 key={doctor.id}
                 className="sheet-item"
                 type="button"
                 onClick={() => {
-                  if (doctor.id && !picked.some((row) => row.id === doctor.id)) setPicked((rows) => [...rows, doctor])
+                  if (!doctor.id) return
+                  if (selected) setPicked((rows) => rows.filter((r) => r.id !== doctor.id))
+                  else setPicked((rows) => [...rows, doctor])
                 }}
               >
-                {doctor.name}
+                <Avatar user={doctor} small />
+                <span style={{ flex: 1 }}>{doctor.name}</span>
+                {selected && <span className="chip chip-teal"><Icon name="check" /> انتخاب</span>}
               </button>
-            ))}
-            {picked.length > 0 && <p className="muted">اعضا: {picked.map((row) => row.name).join('، ')}</p>}
-            <button
-              className="btn btn-primary btn-block"
-              type="button"
-              onClick={() => {
-                const ids = picked.map((row) => row.id).filter((value): value is number => value != null)
-                if (!groupTitle.trim() || ids.length === 0) return
-                void api<{ data: Conversation }>('/conversations/groups', {
-                  method: 'POST',
-                  body: JSON.stringify({ title: groupTitle.trim(), user_ids: ids }),
-                }).then((payload) => {
-                  setGroupOpen(false)
-                  setGroupTitle('')
-                  setPicked([])
-                  navigate(`/messages/${payload.data.id}`)
-                }).catch((reason) => setError(errText(reason)))
-              }}
-            >
-              ساخت گروه
-            </button>
-          </div>
-        </Sheet>
-      )}
+            )
+          })}
+          {picked.length > 0 && <p className="muted" style={{ fontSize: 12.5 }}>اعضا: {picked.map((row) => row.name).join('، ')}</p>}
+          <Button
+            variant="primary"
+            block
+            loading={groupBusy}
+            disabled={!groupTitle.trim() || picked.length === 0}
+            type="button"
+            onClick={() => {
+              const ids = picked.map((row) => row.id).filter((value): value is number => value != null)
+              if (!groupTitle.trim() || ids.length === 0) return
+              setGroupBusy(true)
+              void api<{ data: Conversation }>('/conversations/groups', {
+                method: 'POST',
+                body: JSON.stringify({ title: groupTitle.trim(), user_ids: ids }),
+              }).then((payload) => {
+                setGroupOpen(false)
+                setGroupTitle('')
+                setPicked([])
+                navigate(`/messages/${payload.data.id}`)
+              }).catch((reason) => toast.show(errText(reason), 'error'))
+                .finally(() => setGroupBusy(false))
+            }}
+          >
+            ساخت گروه
+          </Button>
+        </div>
+      </Sheet>
     </>
   )
 }
@@ -230,6 +252,7 @@ export function Messages() {
 export function Chat() {
   const { id } = useParams()
   const { user } = useAuth()
+  const toast = useToast()
   const fileRef = useRef<HTMLInputElement>(null)
   const threadRef = useRef<HTMLDivElement>(null)
   const cachedThread = id ? readCache<{ data: ChatMessage[]; peer: UserCard | null; conversation: Conversation }>(chatKey(id)) : null
@@ -319,7 +342,13 @@ export function Chat() {
         <div className="thread" ref={threadRef}>
           {error && <div className="error">{error}</div>}
           {messages.map((message) => (
-            <div key={message.id} className={message.mine ? 'bubble me' : 'bubble them'}>
+            <motion.div
+              key={message.id}
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.16 }}
+              className={message.mine ? 'bubble me' : 'bubble them'}
+            >
               {!message.mine && message.sender_name && <div className="meta sender">{message.sender_name}</div>}
               {message.body && <div>{message.body}</div>}
               {message.attachment_url && (
@@ -332,7 +361,7 @@ export function Chat() {
                 {when(message.created_at)}
                 {message.mine && message.read ? ' · خوانده شد' : ''}
               </div>
-            </div>
+            </motion.div>
           ))}
         </div>
         <form
@@ -340,7 +369,9 @@ export function Chat() {
           onSubmit={(event) => {
             event.preventDefault()
             const form = new FormData(event.currentTarget)
-            const outgoing = text
+            const outgoing = text.trim()
+            const hasFile = (fileRef.current?.files?.length ?? 0) > 0
+            if (!outgoing && !hasFile) return
             if (outgoing) form.set('body', outgoing)
             const pending = -Date.now()
             if (outgoing) {
@@ -363,7 +394,7 @@ export function Chat() {
               .catch((reason) => {
                 setMessages((rows) => rows.filter((row) => row.id !== pending))
                 setText(outgoing)
-                setError(errText(reason))
+                toast.show(errText(reason), 'error')
               })
           }}
         >
@@ -372,42 +403,42 @@ export function Chat() {
           </button>
           <input ref={fileRef} className="composer-file" name="attachment" type="file" accept="image/*,application/pdf" tabIndex={-1} />
           <input className="input" name="body" value={text} onChange={(event) => setText(event.target.value)} placeholder="پیام..." aria-label="متن پیام" />
-          <button className="icon-btn" type="submit" aria-label="ارسال"><Icon name="send" /></button>
+          <button className="icon-btn" style={{ background: text.trim() ? 'var(--cobalt)' : undefined, color: text.trim() ? '#fff' : undefined }} type="submit" aria-label="ارسال">
+            <Icon name="send" />
+          </button>
         </form>
       </div>
-      {manage && conversation?.type === 'group' && (
-        <Sheet onClose={() => setManage(false)}>
-          <div className="stack">
-            <h2>اعضای گروه</h2>
-            {conversation.members?.map((member) => (
-              <div key={member.id} className="row between">
-                <span>{member.name}</span>
-                {member.id !== user?.id && (
-                  <button
-                    className="text-btn"
-                    type="button"
-                    onClick={() => void api(`/conversations/${id}/members/${member.id}`, { method: 'DELETE' }).then(load).catch((reason) => setError(errText(reason)))}
-                  >
-                    حذف
-                  </button>
-                )}
-              </div>
-            ))}
-            <input className="input" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="افزودن از دنبال‌کننده‌ها و دنبال‌شده‌ها" />
-            {memberHits.length === 0 && <p className="muted">کسی در این فهرست نیست.</p>}
-            {memberHits.map((doctor) => (
-              <button
-                key={doctor.id}
-                className="sheet-item"
-                type="button"
-                onClick={() => void api(`/conversations/${id}/members`, { method: 'POST', body: JSON.stringify({ user_id: doctor.id }) }).then(() => { setMemberQuery(''); load() }).catch((reason) => setError(errText(reason)))}
-              >
-                افزودن {doctor.name}
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
+      <Sheet open={manage && conversation?.type === 'group'} onClose={() => setManage(false)}>
+        <div className="stack">
+          <h2>اعضای گروه</h2>
+          {conversation?.members?.map((member) => (
+            <div key={member.id} className="row between" style={{ padding: '4px 0' }}>
+              <span>{member.name}</span>
+              {member.id !== user?.id && (
+                <button
+                  className="text-btn"
+                  type="button"
+                  onClick={() => void api(`/conversations/${id}/members/${member.id}`, { method: 'DELETE' }).then(load).catch((reason) => toast.show(errText(reason), 'error'))}
+                >
+                  حذف
+                </button>
+              )}
+            </div>
+          ))}
+          <input className="input" value={memberQuery} onChange={(event) => setMemberQuery(event.target.value)} placeholder="افزودن از دنبال‌کننده‌ها و دنبال‌شده‌ها" />
+          {memberHits.length === 0 && <p className="muted center">کسی در این فهرست نیست.</p>}
+          {memberHits.map((doctor) => (
+            <button
+              key={doctor.id}
+              className="sheet-item"
+              type="button"
+              onClick={() => void api(`/conversations/${id}/members`, { method: 'POST', body: JSON.stringify({ user_id: doctor.id }) }).then(() => { setMemberQuery(''); load() }).catch((reason) => toast.show(errText(reason), 'error'))}
+            >
+              <Icon name="plus" /> افزودن {doctor.name}
+            </button>
+          ))}
+        </div>
+      </Sheet>
     </>
   )
 }
@@ -422,55 +453,73 @@ type ProfilePayload = {
 function ProfileTabs({ payload }: { payload: ProfilePayload; onChange?: () => void }) {
   const [tab, setTab] = useState<'posts' | 'reposts' | 'communities'>('posts')
   const navigate = useNavigate()
+  const items = [
+    { key: 'posts' as const, label: 'پست', icon: 'home' },
+    { key: 'reposts' as const, label: 'ریپست', icon: 'repost' },
+    { key: 'communities' as const, label: 'انجمن', icon: 'users' },
+  ]
   return (
-  <>
-    <nav className="profile-segments" aria-label="بخش‌های پروفایل">
-      <button className={tab === 'posts' ? 'segment is-on' : 'segment'} type="button" onClick={() => setTab('posts')}><Icon name="home" /> پست</button>
-      <button className={tab === 'reposts' ? 'segment is-on' : 'segment'} type="button" onClick={() => setTab('reposts')}><Icon name="repost" /> ریپست</button>
-      <button className={tab === 'communities' ? 'segment is-on' : 'segment'} type="button" onClick={() => setTab('communities')}><Icon name="users" /> انجمن</button>
-    </nav>
-    <div className="profile-tab-panel">
-      {tab === 'posts' && (
-        <>
-          {payload.posts.length === 0 && <Empty title="پستی نیست" text="اولین پست را از دکمه انتشار بسازید." />}
-          <PostGrid posts={payload.posts} aspect="portrait" />
-        </>
-      )}
-      {tab === 'reposts' && (
-        <>
-          {payload.reposts.length === 0 && <Empty title="ریپوستی نیست" text="بازنشرهای شما اینجا نمایش داده می‌شود." />}
-          <PostGrid posts={payload.reposts} aspect="portrait" />
-        </>
-      )}
-      {tab === 'communities' && (
-        <div className="pad">
-          {payload.communities.length === 0 && <Empty title="عضو انجمن نیستید" text="از تب انجمن‌ها به تخصص‌های مورد علاقه بپیوندید." />}
-          {payload.communities.map((community) => (
-            <button key={community.id} className="list-row" type="button" onClick={() => navigate(`/communities/${community.slug}`)}>
-              <span className="community-chip">{community.specialty.slice(0, 2)}</span>
-              <div className="body">
-                <div className="title">{community.name}</div>
-                <div className="sub">{community.members_count} عضو · {community.topics_count} موضوع</div>
-              </div>
+    <>
+      <nav className="profile-segments" aria-label="بخش‌های پروفایل">
+        {items.map((item) => {
+          const active = tab === item.key
+          return (
+            <button key={item.key} className={active ? 'segment is-on' : 'segment'} type="button" onClick={() => setTab(item.key)}>
+              {active && (
+                <motion.span
+                  layoutId="profile-seg-pill"
+                  className="seg-pill"
+                  transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+                />
+              )}
+              <Icon name={item.icon} />
+              <span>{item.label}</span>
             </button>
-          ))}
-          {payload.topics.length > 0 && (
-            <>
-              <h2 className="section-title">موضوعات</h2>
-              {payload.topics.map((topic) => (
-                <button key={topic.id} className="list-row" type="button" onClick={() => navigate(`/topics/${topic.id}`)}>
-                  <div className="body">
-                    <div className="title">{topic.title}</div>
-                    <div className="sub">{topic.community.name} · {topic.reply_count} پاسخ</div>
-                  </div>
-                </button>
-              ))}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  </>
+          )
+        })}
+      </nav>
+      <div className="profile-tab-panel">
+        {tab === 'posts' && (
+          <>
+            {payload.posts.length === 0 && <Empty icon="image" title="پستی نیست" text="اولین پست را از دکمه انتشار بسازید." />}
+            <PostGrid posts={payload.posts} aspect="portrait" />
+          </>
+        )}
+        {tab === 'reposts' && (
+          <>
+            {payload.reposts.length === 0 && <Empty icon="repost" title="ریپوستی نیست" text="بازنشرهای شما اینجا نمایش داده می‌شود." />}
+            <PostGrid posts={payload.reposts} aspect="portrait" />
+          </>
+        )}
+        {tab === 'communities' && (
+          <div className="pad">
+            {payload.communities.length === 0 && <Empty icon="users" title="عضو انجمن نیستید" text="از تب انجمن‌ها به تخصص‌های مورد علاقه بپیوندید." />}
+            {payload.communities.map((community) => (
+              <button key={community.id} className="list-row" type="button" onClick={() => navigate(`/communities/${community.slug}`)}>
+                <span className="community-chip">{community.specialty.slice(0, 2)}</span>
+                <div className="body">
+                  <div className="title">{community.name}</div>
+                  <div className="sub">{community.members_count} عضو · {community.topics_count} موضوع</div>
+                </div>
+              </button>
+            ))}
+            {payload.topics.length > 0 && (
+              <>
+                <h2 className="section-title">موضوعات</h2>
+                {payload.topics.map((topic) => (
+                  <button key={topic.id} className="list-row" type="button" onClick={() => navigate(`/topics/${topic.id}`)}>
+                    <div className="body">
+                      <div className="title">{topic.title}</div>
+                      <div className="sub">{topic.community.name} · {topic.reply_count} پاسخ</div>
+                    </div>
+                  </button>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </>
   )
 }
 
@@ -565,7 +614,7 @@ function ProfileLayout({
             onClick={() => setAboutOpen((v) => !v)}
           >
             <span>{aboutOpen ? 'بستن سوابق' : hasEntries ? 'سوابق علمی و حرفه‌ای' : 'اطلاعات و اعتبارسنجی'}</span>
-            <Icon name="chevronLeft" />
+            <Icon name="chevronDown" />
           </button>
           {aboutOpen && (
             <div className="profile-about">
@@ -576,35 +625,33 @@ function ProfileLayout({
         </div>
       </header>
       {children}
-      {followModal && (
-        <Sheet onClose={() => setFollowModal(null)}>
-          <div className="stack">
-            <h2>{followModal === 'followers' ? 'دنبال‌کنندگان' : 'دنبال‌شده‌ها'}</h2>
-            {followLoading && <ListSkel rows={4} />}
-            {!followLoading && followList.length === 0 && (
-              <p className="muted">فهرست خالی است.</p>
-            )}
-            {followList.map((person) => (
-              <button
-                key={person.id}
-                className="list-row"
-                type="button"
-                onClick={() => {
-                  setFollowModal(null)
-                  if (person.is_self) navigate('/profile')
-                  else if (person.slug) navigate(`/doctors/${person.slug}`)
-                }}
-              >
-                <Avatar user={person} />
-                <div className="body">
-                  <div className="title">{person.name}</div>
-                  <div className="sub">{person.specialty_title || person.role_label}</div>
-                </div>
-              </button>
-            ))}
-          </div>
-        </Sheet>
-      )}
+      <Sheet open={followModal != null} onClose={() => setFollowModal(null)}>
+        <div className="stack">
+          <h2>{followModal === 'followers' ? 'دنبال‌کنندگان' : 'دنبال‌شده‌ها'}</h2>
+          {followLoading && <ListSkel rows={4} />}
+          {!followLoading && followList.length === 0 && (
+            <p className="muted center">فهرست خالی است.</p>
+          )}
+          {followList.map((person) => (
+            <button
+              key={person.id}
+              className="list-row"
+              type="button"
+              onClick={() => {
+                setFollowModal(null)
+                if (person.is_self) navigate('/profile')
+                else if (person.slug) navigate(`/doctors/${person.slug}`)
+              }}
+            >
+              <Avatar user={person} />
+              <div className="body">
+                <div className="title">{person.name}</div>
+                <div className="sub">{person.specialty_title || person.role_label}</div>
+              </div>
+            </button>
+          ))}
+        </div>
+      </Sheet>
     </div>
   )
 }
@@ -649,11 +696,12 @@ export function Profile() {
 export function DoctorPage() {
   const { slug } = useParams()
   const navigate = useNavigate()
+  const toast = useToast()
   const [user, setUser] = useState<UserCard | null>(null)
   const [payload, setPayload] = useState<ProfilePayload>({ posts: [], reposts: [], topics: [], communities: [] })
   const [error, setError] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
-  const [notice, setNotice] = useState('')
+  const [confirmBlock, setConfirmBlock] = useState(false)
 
   const load = () => {
     api<ProfilePayload & { data: UserCard }>(`/doctors/${slug}`)
@@ -683,29 +731,36 @@ export function DoctorPage() {
       />
       <div className="screen-body profile-screen">
         {error && <div className="error pad">{error}</div>}
-        {notice && <div className="banner banner-info" style={{ margin: '10px 14px 0' }}>{notice}</div>}
         {!user && !error && <div className="pad"><ListSkel rows={5} /></div>}
         {user && (
           <ProfileLayout
             user={user}
             actions={!user.is_self ? (
               <>
-                <button className={user.is_following ? 'btn btn-ghost' : 'btn btn-primary'} type="button" onClick={() => void api(`/doctors/${user.id}/follow`, { method: user.is_following ? 'DELETE' : 'POST' }).then(load)}>
+                <Button
+                  variant={user.is_following ? 'ghost' : 'primary'}
+                  type="button"
+                  onClick={() => void api(`/doctors/${user.id}/follow`, { method: user.is_following ? 'DELETE' : 'POST' })
+                    .then(() => {
+                      toast.show(user.is_following ? 'دنبال‌کردن لغو شد' : 'دنبال شد', 'info')
+                      load()
+                    })}
+                >
                   {user.is_following ? 'دنبال می‌کنید' : 'دنبال کردن'}
-                </button>
+                </Button>
                 {user.id && (
-                  <button
-                    className="btn btn-primary"
+                  <Button
+                    variant="primary"
                     type="button"
                     onClick={() => {
                       setError('')
                       void api<{ data: Conversation }>('/conversations', { method: 'POST', body: JSON.stringify({ user_id: user.id }) })
                         .then((row) => navigate(`/messages/${row.data.id}`))
-                        .catch((reason) => setError(errText(reason)))
+                        .catch((reason) => toast.show(errText(reason), 'error'))
                     }}
                   >
                     <Icon name="chat" /> پیام شخصی
-                  </button>
+                  </Button>
                 )}
               </>
             ) : <span />}
@@ -714,37 +769,52 @@ export function DoctorPage() {
           </ProfileLayout>
         )}
       </div>
-      {menuOpen && user?.id && (
-        <Sheet onClose={() => setMenuOpen(false)}>
-          <div className="stack">
-            <button
-              className="sheet-item"
-              type="button"
-              onClick={() => {
-                setMenuOpen(false)
-                void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'user', id: user.id, reason: 'other' }) })
-                  .then(() => setNotice('گزارش کاربر برای بررسی ثبت شد.'))
-                  .catch((reason) => setError(errText(reason)))
-              }}
-            >
-              گزارش کاربر
-            </button>
-            <button
-              className="sheet-item danger"
-              type="button"
-              onClick={() => {
-                if (!window.confirm(`${user.name} مسدود شود؟`)) return
-                setMenuOpen(false)
-                void api('/blocks', { method: 'POST', body: JSON.stringify({ user_id: user.id }) })
-                  .then(() => navigate(-1))
-                  .catch((reason) => setError(errText(reason)))
-              }}
-            >
-              مسدود کردن کاربر
-            </button>
-          </div>
-        </Sheet>
-      )}
+
+      <Sheet open={menuOpen && Boolean(user?.id)} onClose={() => setMenuOpen(false)}>
+        <div className="stack">
+          <button
+            className="sheet-item"
+            type="button"
+            onClick={() => {
+              if (!user?.id) return
+              setMenuOpen(false)
+              void api('/reports', { method: 'POST', body: JSON.stringify({ type: 'user', id: user.id, reason: 'other' }) })
+                .then(() => toast.show('گزارش کاربر برای بررسی ثبت شد', 'info'))
+                .catch((reason) => toast.show(errText(reason), 'error'))
+            }}
+          >
+            <Icon name="shield" /> گزارش کاربر
+          </button>
+          <button
+            className="sheet-item danger"
+            type="button"
+            onClick={() => {
+              setMenuOpen(false)
+              setConfirmBlock(true)
+            }}
+          >
+            <Icon name="xCircle" /> مسدود کردن کاربر
+          </button>
+        </div>
+      </Sheet>
+
+      <ConfirmSheet
+        open={confirmBlock && Boolean(user?.id)}
+        title={`مسدود کردن ${user?.name || 'کاربر'}`}
+        text="این کاربر دیگر نمی‌تواند به شما پیام بدهد یا محتوای شما را ببیند."
+        confirmLabel="بله، مسدود شود"
+        onClose={() => setConfirmBlock(false)}
+        onConfirm={() => {
+          if (!user?.id) return
+          setConfirmBlock(false)
+          void api('/blocks', { method: 'POST', body: JSON.stringify({ user_id: user.id }) })
+            .then(() => {
+              toast.show('کاربر مسدود شد', 'info')
+              navigate(-1)
+            })
+            .catch((reason) => toast.show(errText(reason), 'error'))
+        }}
+      />
     </>
   )
 }
@@ -779,58 +849,88 @@ function AboutSection({ user }: { user: UserCard | Me }) {
 
 export function EditProfile() {
   const { user, refresh } = useAuth()
+  const toast = useToast()
   const [error, setError] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [addingEntry, setAddingEntry] = useState(false)
   if (!user) return null
   return (
     <>
       <Top title="ویرایش پروفایل" back />
-      <div className="screen-body pad">
+      <div className="screen-body pad stack-lg">
         {error && <div className="error">{error}</div>}
-        <div className="center profile-edit-hero">
+        <div className="card profile-edit-hero">
           <Avatar user={user} large />
           <form
             className="avatar-upload"
             onSubmit={(event) => {
               event.preventDefault()
               const body = new FormData(event.currentTarget)
-              void api('/me/avatar', { method: 'POST', body }).then(() => refresh()).catch((reason) => setError(errText(reason)))
+              void api('/me/avatar', { method: 'POST', body })
+                .then(() => {
+                  toast.show('تصویر پروفایل به‌روزرسانی شد', 'success')
+                  return refresh()
+                })
+                .catch((reason) => setError(errText(reason)))
             }}
           >
-            <label className="btn btn-ghost">
-              <Icon name="camera" /> تغییر عکس
+            <label className="btn btn-ghost btn-sm">
+              <Icon name="camera" /> تغییر عکس پروفایل
               <input className="sr-only" name="avatar" type="file" accept="image/*" required onChange={(event) => {
                 if (event.target.files?.length) event.currentTarget.form?.requestSubmit()
               }} />
             </label>
           </form>
         </div>
+
         <form
-          className="stack"
+          className="card stack"
           onSubmit={(event) => {
             event.preventDefault()
+            setSaving(true)
             const form = new FormData(event.currentTarget)
             const payload = Object.fromEntries(form.entries())
-            void api('/me', { method: 'PATCH', body: JSON.stringify(payload) }).then(() => refresh()).catch((reason) => setError(errText(reason)))
+            void api('/me', { method: 'PATCH', body: JSON.stringify(payload) })
+              .then(() => {
+                toast.show('مشخصات ذخیره شد', 'success')
+                return refresh()
+              })
+              .catch((reason) => setError(errText(reason)))
+              .finally(() => setSaving(false))
           }}
         >
-          <div className="field"><label htmlFor="en">نام نمایشی</label><input className="input" id="en" name="name" defaultValue={user.name} /></div>
-          <div className="field"><label htmlFor="eb">بیوگرافی حرفه‌ای</label><textarea className="textarea" id="eb" name="bio" defaultValue={user.bio || ''} style={{ minHeight: 90 }} /></div>
-          <div className="field"><label htmlFor="ew">عنوان / محل کار</label><input className="input" id="ew" name="headline" defaultValue={user.headline || ''} /></div>
-          <div className="field"><label htmlFor="ec">شهر</label><input className="input" id="ec" name="city" defaultValue={user.city || ''} /></div>
-          <div className="field"><label htmlFor="es">تخصص</label><input className="input" id="es" name="specialty_title" defaultValue={user.specialty_title || ''} /></div>
-          <div className="banner banner-info">شماره نظام و مدارک حساس در اطلاعات عمومی پروفایل نمایش داده نمی‌شوند.</div>
-          <button className="btn btn-primary btn-block" type="submit">ذخیره</button>
+          <Field label="نام نمایشی" htmlFor="en"><input className="input" id="en" name="name" defaultValue={user.name} /></Field>
+          <Field label="بیوگرافی حرفه‌ای" htmlFor="eb"><textarea className="textarea" id="eb" name="bio" defaultValue={user.bio || ''} style={{ minHeight: 90 }} /></Field>
+          <Field label="عنوان / محل کار" htmlFor="ew"><input className="input" id="ew" name="headline" defaultValue={user.headline || ''} /></Field>
+          <div className="two">
+            <Field label="شهر" htmlFor="ec"><input className="input" id="ec" name="city" defaultValue={user.city || ''} /></Field>
+            <Field label="تخصص" htmlFor="es"><input className="input" id="es" name="specialty_title" defaultValue={user.specialty_title || ''} /></Field>
+          </div>
+          <div className="banner banner-info" style={{ margin: 0 }}>
+            <Icon name="shield" />
+            <span>شماره نظام و مدارک حساس در اطلاعات عمومی پروفایل نمایش داده نمی‌شوند.</span>
+          </div>
+          <Button variant="primary" block loading={saving} type="submit">ذخیره تغییرات</Button>
         </form>
+
         <form
-          className="stack"
-          style={{ marginTop: 20 }}
+          className="card stack"
           onSubmit={(event) => {
             event.preventDefault()
-            const form = Object.fromEntries(new FormData(event.currentTarget).entries())
-            void api('/me/entries', { method: 'POST', body: JSON.stringify(form) }).then(() => refresh()).catch((reason) => setError(errText(reason)))
+            const target = event.currentTarget
+            setAddingEntry(true)
+            const form = Object.fromEntries(new FormData(target).entries())
+            void api('/me/entries', { method: 'POST', body: JSON.stringify(form) })
+              .then(() => {
+                target.reset()
+                toast.show('سابقه اضافه شد', 'success')
+                return refresh()
+              })
+              .catch((reason) => setError(errText(reason)))
+              .finally(() => setAddingEntry(false))
           }}
         >
-          <h2 className="section-title" style={{ padding: 0 }}>سابقه و دستاورد</h2>
+          <h2 className="section-title section-title--tight">افزودن سابقه و دستاورد</h2>
           <select className="select" name="kind" defaultValue="experience">
             <option value="education">تحصیل</option>
             <option value="experience">شغل</option>
@@ -840,15 +940,18 @@ export function EditProfile() {
             <option value="skill">مهارت</option>
           </select>
           <input className="input" name="title" placeholder="عنوان" required />
-          <input className="input" name="subtitle" placeholder="محل یا ناشر" />
-          <input className="input" name="year" placeholder="سال" />
-          <button className="btn btn-ghost btn-block" type="submit">افزودن</button>
+          <div className="two">
+            <input className="input" name="subtitle" placeholder="محل یا ناشر" />
+            <input className="input" name="year" placeholder="سال" />
+          </div>
+          <Button variant="ghost" block loading={addingEntry} type="submit">افزودن سابقه</Button>
         </form>
+
         {(user.entries?.length ?? 0) > 0 && (
-          <div className="stack" style={{ marginTop: 18 }}>
-            <h2 className="section-title" style={{ padding: 0 }}>سوابق ثبت‌شده</h2>
+          <div className="stack">
+            <h2 className="section-title section-title--tight">سوابق ثبت‌شده</h2>
             {user.entries?.map((entry) => (
-              <div key={entry.id} className="card pad-in row between" style={{ alignItems: 'center', gap: 10 }}>
+              <div key={entry.id} className="card row between" style={{ alignItems: 'center', gap: 10 }}>
                 <div style={{ minWidth: 0 }}>
                   <div className="muted" style={{ fontSize: 11 }}>{entryLabels[entry.kind] || entry.kind}</div>
                   <b>{entry.title}</b>
@@ -860,7 +963,12 @@ export function EditProfile() {
                   className="icon-btn"
                   type="button"
                   aria-label="حذف سابقه"
-                  onClick={() => void api(`/me/entries/${entry.id}`, { method: 'DELETE' }).then(() => refresh()).catch((reason) => setError(errText(reason)))}
+                  onClick={() => void api(`/me/entries/${entry.id}`, { method: 'DELETE' })
+                    .then(() => {
+                      toast.show('سابقه حذف شد', 'info')
+                      return refresh()
+                    })
+                    .catch((reason) => setError(errText(reason)))}
                 >
                   <Icon name="trash" />
                 </button>
@@ -885,7 +993,7 @@ export function Explore() {
   const [viewerIndex, setViewerIndex] = useState<number | null>(null)
 
   useEffect(() => {
-  if (q.trim().length >= 2) {
+    if (q.trim().length >= 2) {
       setLoading(true)
       const timer = window.setTimeout(() => {
         void api<{ doctors: UserCard[]; posts: Post[]; hashtags?: string[] }>(`/explore?q=${encodeURIComponent(q)}`).then((payload) => {
@@ -920,7 +1028,7 @@ export function Explore() {
       <div className="screen-body search-screen explore-screen">
         <div className="pad">
           <div className="field">
-            <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="نام، پست یا هشتگ" />
+            <input className="input" value={q} onChange={(event) => setQ(event.target.value)} placeholder="جست‌وجوی نام پزشک، پست یا #هشتگ..." />
           </div>
           {tags.length > 0 && (
             <div className="chips explore-tags">
@@ -929,20 +1037,24 @@ export function Explore() {
               ))}
             </div>
           )}
-          {loading && posts.length === 0 && doctors.length === 0 && <p className="muted">در حال بارگذاری...</p>}
-          {doctors.map((doctor) => (
-            <button key={doctor.id} className="list-row" type="button" onClick={() => doctor.slug && navigate(`/doctors/${doctor.slug}`)}>
-              <Avatar user={doctor} />
-              <div className="body">
-                <div className="title">{doctor.name}</div>
-                <div className="sub">{doctor.specialty_title || doctor.role_label} · {doctor.city}</div>
-              </div>
-            </button>
-          ))}
+          {loading && posts.length === 0 && doctors.length === 0 && <ListSkel rows={5} />}
+          {doctors.length > 0 && (
+            <div className="card" style={{ padding: '4px 10px', marginBottom: 12 }}>
+              {doctors.map((doctor) => (
+                <button key={doctor.id} className="list-row" type="button" onClick={() => doctor.slug && navigate(`/doctors/${doctor.slug}`)}>
+                  <Avatar user={doctor} />
+                  <div className="body">
+                    <div className="title">{doctor.name} <VerifiedSeal user={doctor} /></div>
+                    <div className="sub">{doctor.specialty_title || doctor.role_label}{doctor.city ? ` · ${doctor.city}` : ''}</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
           {!loading && posts.length === 0 && doctors.length === 0 && (
             q.trim().length >= 2
-              ? <Empty title="نتیجه‌ای نیست" text="نام، متن پست یا هشتگ دیگری را امتحان کنید." />
-              : <Empty title="پستی نیست" text="اولین پست‌ها به‌زودی اینجا ظاهر می‌شوند." />
+              ? <Empty icon="search" title="نتیجه‌ای نیست" text="نام، متن پست یا هشتگ دیگری را امتحان کنید." />
+              : <Empty icon="explore" title="پستی نیست" text="اولین پست‌ها به‌زودی اینجا ظاهر می‌شوند." />
           )}
         </div>
         <PostGrid

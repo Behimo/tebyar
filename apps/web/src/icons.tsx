@@ -33,7 +33,19 @@ const paths: Record<string, ReactNode> = {
   graduation: <><path d="m2 10 10-5 10 5-10 5z" /><path d="M6 12v5c0 1.7 2.7 3 6 3s6-1.3 6-3v-5" /></>,
   chevronLeft: <path d="m15 6-6 6 6 6" />,
   chevronRight: <path d="m9 6 6 6-6 6" />,
+  chevronDown: <path d="m6 9 6 6 6-6" />,
   external: <><path d="M15 3h6v6" /><path d="M10 14 21 3" /><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" /></>,
+  phone: <path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 2 .7 2.9a2 2 0 0 1-.4 2.1L8.1 10a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.9.6 2.9.7A2 2 0 0 1 22 16.9z" />,
+  shield: <><path d="M12 3 4 6.5v5.5c0 5 3.4 9.3 8 10.5 4.6-1.2 8-5.5 8-10.5V6.5z" /><path d="m9.5 12.2 1.8 1.8 3.5-3.8" /></>,
+  clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3.2 2" /></>,
+  image: <><rect x="3" y="4" width="18" height="16" rx="2.5" /><circle cx="8.5" cy="9.5" r="1.5" /><path d="m21 15-4.5-4.5a1.5 1.5 0 0 0-2.1 0L7 18" /></>,
+  xCircle: <><circle cx="12" cy="12" r="9" /><path d="m15 9-6 6M9 9l6 6" /></>,
+  chart: <><path d="M4 20h16" /><rect x="6" y="12" width="3" height="5" rx="1" /><rect x="10.5" y="7" width="3" height="10" rx="1" /><rect x="15" y="10" width="3" height="7" rx="1" /></>,
+  sparkles: <><path d="M12 3l1.8 4.2L18 9l-4.2 1.8L12 15l-1.8-4.2L6 9l4.2-1.8z" /><path d="M5 17l.9 2.1L8 20l-2.1.9L5 23l-.9-2.1L2 20l2.1-.9z" /></>,
+  building: <><rect x="4" y="4" width="16" height="16" rx="2" /><path d="M9 9h2M13 9h2M9 13h2M13 13h2M10 20v-3h4v3" /></>,
+  stethoscope: <><path d="M6 4v5a4 4 0 0 0 8 0V4" /><path d="M5 4h2M13 4h2" /><path d="M10 13v2a5 5 0 0 0 10 0v-2" /><circle cx="20" cy="11" r="1.8" /></>,
+  lock: <><rect x="5" y="11" width="14" height="9" rx="2" /><path d="M8 11V7a4 4 0 0 1 8 0v4" /></>,
+  sliders: <><path d="M4 7h10M18 7h2M4 12h4M12 12h8M4 17h12M19 17h1" /><circle cx="16" cy="7" r="2" /><circle cx="10" cy="12" r="2" /><circle cx="17" cy="17" r="2" /></>,
 }
 
 const alwaysFilled = new Set(['more', 'verified'])
@@ -48,9 +60,9 @@ export function Icon({ name, filled }: { name: keyof typeof paths | string; fill
   )
 }
 
-export function Brand() {
+export function Brand({ size = 'md' }: { size?: 'md' | 'lg' }) {
   return (
-    <span className="brand" aria-label="طبیار">
+    <span className={size === 'lg' ? 'brand brand-lg' : 'brand'} aria-label="طبیار">
       <svg className="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
         <path fill="#12A8A8" d="M8 12.5c0-3.2 2.2-6.5 7-6.5h.2c.7 0 1.2.5 1.2 1.2s-.5 1.3-1.2 1.3H15c-2.7 0-4.3 1.7-4.3 4v6.2c0 3 1.8 5.3 5.5 5.3h5.2c.7 0 1.3.5 1.3 1.2s-.6 1.3-1.3 1.3h-5.2C9.4 26.5 6 23.2 6 18.5v-6z" />
         <path fill="#2F6FED" d="M17.3 6.5h6.2C27.4 6.5 30 9.3 30 13.5v5c0 3.2-2.2 6.5-7 6.5h-.3c-.7 0-1.2-.6-1.2-1.3s.5-1.2 1.2-1.2h.3c2.7 0 4.3-1.7 4.3-4v-5c0-3-1.8-5.3-5.5-5.3h-5c-.7 0-1.3-.5-1.3-1.2s.6-1.3 1.3-1.3z" />

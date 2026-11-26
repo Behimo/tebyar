@@ -1,6 +1,21 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject, type TouchEvent } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ButtonHTMLAttributes,
+  type ClipboardEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  type RefObject,
+  type TouchEvent,
+} from 'react'
 import { createPortal } from 'react-dom'
 import { Link, useNavigate } from 'react-router-dom'
+import { AnimatePresence, motion } from 'motion/react'
 import { api, assetUrl, when } from './api'
 import type { Post, UserCard } from './types'
 import { Brand, Icon } from './icons'
@@ -22,6 +37,348 @@ const portraits: Record<string, string> = {
   kasra: '/design/avatar-kaveh.png',
 }
 
+/* ---------------- Toast System ---------------- */
+type ToastKind = 'info' | 'success' | 'error'
+type ToastItem = { id: number; text: string; kind: ToastKind }
+type ToastApi = { show: (text: string, kind?: ToastKind) => void }
+
+const ToastContext = createContext<ToastApi>({ show: () => undefined })
+
+export function ToastProvider({ children }: { children: ReactNode }) {
+  const [items, setItems] = useState<ToastItem[]>([])
+
+  const show = useCallback((text: string, kind: ToastKind = 'info') => {
+    const id = Date.now() + Math.random()
+    setItems((rows) => [...rows.slice(-2), { id, text, kind }])
+    window.setTimeout(() => {
+      setItems((rows) => rows.filter((item) => item.id !== id))
+    }, 3200)
+  }, [])
+
+  const value = useMemo(() => ({ show }), [show])
+
+  return (
+    <ToastContext.Provider value={value}>
+      {children}
+      {createPortal(
+        <div className="toast-stack" aria-live="polite">
+          <AnimatePresence>
+            {items.map((item) => (
+              <motion.div
+                key={item.id}
+                className={`toast-item is-${item.kind}`}
+                initial={{ opacity: 0, y: 18, scale: 0.96 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.96 }}
+                transition={{ duration: 0.22, ease: [0.32, 0.72, 0, 1] }}
+              >
+                <Icon name={item.kind === 'error' ? 'xCircle' : item.kind === 'success' ? 'check' : 'sparkles'} />
+                <span>{item.text}</span>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+        </div>,
+        document.body,
+      )}
+    </ToastContext.Provider>
+  )
+}
+
+export function useToast(): ToastApi {
+  return useContext(ToastContext)
+}
+
+/* ---------------- Primitives ---------------- */
+export function Button({
+  variant = 'ghost',
+  size = 'md',
+  block = false,
+  loading = false,
+  className = '',
+  children,
+  disabled,
+  ...rest
+}: ButtonHTMLAttributes<HTMLButtonElement> & {
+  variant?: 'primary' | 'ghost' | 'gradient' | 'teal' | 'danger'
+  size?: 'md' | 'sm'
+  block?: boolean
+  loading?: boolean
+}) {
+  const classes = [
+    'btn',
+    `btn-${variant}`,
+    size === 'sm' ? 'btn-sm' : '',
+    block ? 'btn-block' : '',
+    loading ? 'is-loading' : '',
+    className,
+  ].filter(Boolean).join(' ')
+
+  return (
+    <button className={classes} disabled={disabled || loading} {...rest}>
+      {loading && <span className="btn-spinner" aria-hidden="true" />}
+      {children}
+    </button>
+  )
+}
+
+export function Field({
+  label,
+  htmlFor,
+  help,
+  error,
+  counter,
+  children,
+}: {
+  label?: string
+  htmlFor?: string
+  help?: string
+  error?: string
+  counter?: string
+  children: ReactNode
+}) {
+  return (
+    <div className={error ? 'field is-error' : 'field'}>
+      {(label || counter) && (
+        <div className="field-head">
+          {label ? <label htmlFor={htmlFor}>{label}</label> : <span />}
+          {counter && <span className="field-count">{counter}</span>}
+        </div>
+      )}
+      {children}
+      {help && !error && <p className="help">{help}</p>}
+      {error && <p className="field-error">{error}</p>}
+    </div>
+  )
+}
+
+export function latinDigits(input: string): string {
+  return input
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 1776))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 1632))
+}
+
+export function OtpInput({
+  value,
+  onChange,
+  onComplete,
+  hasError = false,
+  length = 5,
+}: {
+  value: string
+  onChange: (next: string) => void
+  onComplete?: (code: string) => void
+  hasError?: boolean
+  length?: number
+}) {
+  const refs = useRef<(HTMLInputElement | null)[]>([])
+  const digits = Array.from({ length }, (_, idx) => value[idx] ?? '')
+
+  const emit = (nextChars: string[]) => {
+    const joined = nextChars.join('').slice(0, length)
+    onChange(joined)
+    if (joined.length === length) onComplete?.(joined)
+  }
+
+  const handleChange = (index: number, raw: string) => {
+    const clean = latinDigits(raw).replace(/\D/g, '')
+    if (!clean) {
+      const copy = [...digits]
+      copy[index] = ''
+      emit(copy)
+      return
+    }
+    if (clean.length > 1) {
+      const next = clean.slice(0, length).split('')
+      while (next.length < length) next.push('')
+      emit(next)
+      const focusIdx = Math.min(clean.length, length - 1)
+      refs.current[focusIdx]?.focus()
+      return
+    }
+    const copy = [...digits]
+    copy[index] = clean
+    emit(copy)
+    if (index < length - 1) refs.current[index + 1]?.focus()
+  }
+
+  const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
+    if (event.key === 'Backspace' && !digits[index] && index > 0) {
+      refs.current[index - 1]?.focus()
+    } else if (event.key === 'ArrowLeft' && index > 0) {
+      refs.current[index - 1]?.focus()
+    } else if (event.key === 'ArrowRight' && index < length - 1) {
+      refs.current[index + 1]?.focus()
+    }
+  }
+
+  const handlePaste = (event: ClipboardEvent<HTMLInputElement>) => {
+    const pasted = latinDigits(event.clipboardData.getData('text')).replace(/\D/g, '').slice(0, length)
+    if (!pasted) return
+    event.preventDefault()
+    const next = pasted.split('')
+    while (next.length < length) next.push('')
+    emit(next)
+    refs.current[Math.min(pasted.length, length - 1)]?.focus()
+  }
+
+  return (
+    <motion.div
+      className={hasError ? 'otp-boxes is-error' : 'otp-boxes'}
+      animate={hasError ? { x: [0, -8, 8, -5, 5, 0] } : { x: 0 }}
+      transition={{ duration: 0.35 }}
+    >
+      {digits.map((digit, index) => (
+        <input
+          key={index}
+          ref={(el) => { refs.current[index] = el }}
+          className={digit ? 'otp-box is-filled' : 'otp-box'}
+          type="text"
+          inputMode="numeric"
+          autoComplete={index === 0 ? 'one-time-code' : 'off'}
+          maxLength={length}
+          aria-label={`رقم ${index + 1}`}
+          value={digit}
+          autoFocus={index === 0 && !value}
+          onChange={(event) => handleChange(index, event.target.value)}
+          onKeyDown={(event) => handleKeyDown(index, event)}
+          onPaste={handlePaste}
+        />
+      ))}
+    </motion.div>
+  )
+}
+
+export function Segmented<T extends string>({
+  options,
+  value,
+  onChange,
+  layoutId = 'seg-pill',
+  ariaLabel,
+  className = '',
+}: {
+  options: { value: T; label: string; icon?: string }[]
+  value: T
+  onChange: (next: T) => void
+  layoutId?: string
+  ariaLabel?: string
+  className?: string
+}) {
+  return (
+    <div
+      className={`segmented ${className}`.trim()}
+      style={{ gridTemplateColumns: `repeat(${options.length}, 1fr)` }}
+      role="tablist"
+      aria-label={ariaLabel}
+    >
+      {options.map((opt) => {
+        const active = opt.value === value
+        return (
+          <button
+            key={opt.value}
+            type="button"
+            role="tab"
+            aria-selected={active}
+            className={active ? 'seg-btn is-on' : 'seg-btn'}
+            onClick={() => onChange(opt.value)}
+          >
+            {active && (
+              <motion.span
+                layoutId={layoutId}
+                className="seg-pill"
+                transition={{ type: 'spring', stiffness: 420, damping: 34 }}
+              />
+            )}
+            {opt.icon && <Icon name={opt.icon} />}
+            <span>{opt.label}</span>
+          </button>
+        )
+      })}
+    </div>
+  )
+}
+
+export function ConfirmSheet({
+  open,
+  title,
+  text,
+  confirmLabel = 'تأیید',
+  cancelLabel = 'انصراف',
+  danger = true,
+  busy = false,
+  onConfirm,
+  onClose,
+}: {
+  open: boolean
+  title: string
+  text: string
+  confirmLabel?: string
+  cancelLabel?: string
+  danger?: boolean
+  busy?: boolean
+  onConfirm: () => void
+  onClose: () => void
+}) {
+  return (
+    <Sheet open={open} onClose={onClose} front>
+      <div className="stack">
+        <h2>{title}</h2>
+        <p className="muted center" style={{ fontSize: 13.5, lineHeight: 1.7 }}>{text}</p>
+        <div className="two" style={{ marginTop: 8 }}>
+          <Button variant="ghost" onClick={onClose} disabled={busy}>{cancelLabel}</Button>
+          <Button variant={danger ? 'danger' : 'primary'} loading={busy} onClick={onConfirm}>{confirmLabel}</Button>
+        </div>
+      </div>
+    </Sheet>
+  )
+}
+
+export function Sheet({
+  open = true,
+  onClose,
+  children,
+  front = false,
+}: {
+  open?: boolean
+  onClose: () => void
+  children: ReactNode
+  front?: boolean
+}) {
+  return createPortal(
+    <AnimatePresence>
+      {open && (
+        <motion.div
+          className={front ? 'overlay overlay-front' : 'overlay'}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+          transition={{ duration: 0.2 }}
+          onClick={onClose}
+        >
+          <motion.div
+            className="sheet"
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 360, damping: 34 }}
+            drag="y"
+            dragConstraints={{ top: 0, bottom: 260 }}
+            dragElastic={{ top: 0, bottom: 0.35 }}
+            onDragEnd={(_, info) => {
+              if (info.offset.y > 90 || info.velocity.y > 450) onClose()
+            }}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <span className="sheet-handle" aria-hidden="true" />
+            {children}
+          </motion.div>
+        </motion.div>
+      )}
+    </AnimatePresence>,
+    document.body,
+  )
+}
+
+/* ---------------- Media & Cards ---------------- */
 export function postCover(post: Post): string | undefined {
   const own = post.media[0]?.url
     ? assetUrl(post.media[0].url)
@@ -190,15 +547,6 @@ export function VerifiedSeal({ user }: { user: Pick<UserCard, 'badges'> }) {
   )
 }
 
-export function Sheet({ onClose, children, front = false }: { onClose: () => void; children: ReactNode; front?: boolean }) {
-  return createPortal(
-    <div className={front ? 'overlay is-open overlay-front' : 'overlay is-open'} onClick={onClose}>
-      <div className="sheet sheet-up" onClick={(event) => event.stopPropagation()}>{children}</div>
-    </div>,
-    document.body,
-  )
-}
-
 export function MentionText({ text }: { text: string }) {
   const parts = text.split(/(@[a-z0-9][a-z0-9_-]*|#[\p{L}\p{N}_-]+)/giu)
   return (
@@ -265,12 +613,29 @@ export function Toggle({ on, onChange, label }: { on: boolean; onChange: (next: 
   )
 }
 
-export function Empty({ title, text }: { title: string; text: string }) {
+export function Empty({
+  title,
+  text,
+  icon = 'sparkles',
+  action,
+}: {
+  title: string
+  text: string
+  icon?: string
+  action?: ReactNode
+}) {
   return (
-    <div className="empty">
+    <motion.div
+      className="empty-card"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+    >
+      <span className="empty-icon"><Icon name={icon} /></span>
       <strong>{title}</strong>
       <span>{text}</span>
-    </div>
+      {action && <div style={{ marginTop: 6 }}>{action}</div>}
+    </motion.div>
   )
 }
 
@@ -321,26 +686,73 @@ export function PostCard({
   detail?: boolean
 }) {
   const navigate = useNavigate()
+  const toast = useToast()
   const [saved, setSaved] = useState(post.bookmarked)
   const [reposted, setReposted] = useState(false)
+  const [burst, setBurst] = useState(false)
+  const lastTap = useRef(0)
+
   useEffect(() => { setSaved(post.bookmarked) }, [post.bookmarked, post.id])
   const hasMedia = post.media.length > 0 || postCover(post)
+
   const toggle = async () => {
-    const next = await api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' })
-    onChange(next.data)
+    try {
+      const next = await api<{ data: Post }>(`/posts/${post.id}/reactions`, { method: post.reacted ? 'DELETE' : 'POST' })
+      onChange(next.data)
+    } catch (reason) {
+      toast.show(errText(reason), 'error')
+    }
+  }
+
+  const onMediaClick = () => {
+    const now = Date.now()
+    if (now - lastTap.current < 280) {
+      lastTap.current = 0
+      setBurst(true)
+      window.setTimeout(() => setBurst(false), 750)
+      if (!post.reacted) void toggle()
+      return
+    }
+    lastTap.current = now
+    if (!detail) {
+      window.setTimeout(() => {
+        if (lastTap.current === now) navigate(`/posts/${post.id}`)
+      }, 280)
+    }
   }
 
   const openDetail = () => {
     if (!detail) navigate(`/posts/${post.id}`)
   }
+
   const carousel = hasMedia ? <MediaCarousel post={post} className="post-photo" /> : null
-  const media = carousel && !detail
+  const media = carousel
     ? (
-      <div role="button" tabIndex={0} className="post-media-hit" onClick={openDetail} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') openDetail() }} aria-label="مشاهده پست">
+      <div
+        role={detail ? undefined : 'button'}
+        tabIndex={detail ? undefined : 0}
+        className="post-media-hit"
+        onClick={onMediaClick}
+        onKeyDown={(event) => { if (!detail && (event.key === 'Enter' || event.key === ' ')) openDetail() }}
+        aria-label={detail ? undefined : 'مشاهده پست'}
+      >
         {carousel}
+        <AnimatePresence>
+          {burst && (
+            <motion.span
+              className="double-tap-heart"
+              initial={{ opacity: 0, scale: 0.4 }}
+              animate={{ opacity: 1, scale: [0.4, 1.25, 1] }}
+              exit={{ opacity: 0, scale: 1.4 }}
+              transition={{ duration: 0.45 }}
+            >
+              <Icon name="heart" filled />
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
     )
-    : carousel
+    : null
 
   if (flush) {
     return (
@@ -375,7 +787,12 @@ export function PostCard({
   const repostCover = post.repost_of ? postCover(post.repost_of) : undefined
 
   return (
-    <article className={cardClass}>
+    <motion.article
+      className={cardClass}
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.28, ease: [0.32, 0.72, 0, 1] }}
+    >
       <div className="post-head">
         {authorHref
           ? <Link className="post-author-link" to={authorHref}>{authorContent}</Link>
@@ -418,7 +835,8 @@ export function PostCard({
         </a>
       )}
       <div className="actions">
-        <button
+        <motion.button
+          whileTap={{ scale: 0.85 }}
           className={saved ? 'bookmark is-on' : 'bookmark'}
           type="button"
           aria-pressed={saved}
@@ -427,15 +845,35 @@ export function PostCard({
             const next = !saved
             setSaved(next)
             void api(`/posts/${post.id}/bookmark`, { method: saved ? 'DELETE' : 'POST' })
-              .then(() => onChange({ ...post, bookmarked: next }))
+              .then(() => {
+                onChange({ ...post, bookmarked: next })
+                toast.show(next ? 'در ذخیره‌شده‌ها ثبت شد' : 'از ذخیره‌شده‌ها برداشته شد', 'info')
+              })
+              .catch((reason) => {
+                setSaved(!next)
+                toast.show(errText(reason), 'error')
+              })
           }}
         >
           <Icon name="bookmark" filled={saved} />
-        </button>
+        </motion.button>
         <div className="reactions">
-          <button className={post.reacted ? 'react like is-on' : 'react like'} type="button" aria-pressed={post.reacted} onClick={() => void toggle()}>
-            <Icon name="heart" filled={post.reacted} /> {fa.format(post.reactions_count)}
-          </button>
+          <motion.button
+            whileTap={{ scale: 0.88 }}
+            className={post.reacted ? 'react like is-on' : 'react like'}
+            type="button"
+            aria-pressed={post.reacted}
+            onClick={() => void toggle()}
+          >
+            <motion.span
+              style={{ display: 'inline-flex' }}
+              animate={post.reacted ? { scale: [1, 1.32, 1] } : { scale: 1 }}
+              transition={{ duration: 0.28 }}
+            >
+              <Icon name="heart" filled={post.reacted} />
+            </motion.span>
+            {fa.format(post.reactions_count)}
+          </motion.button>
           {detail || onComment
             ? (
               <button className="react comment" type="button" onClick={onComment}>
@@ -447,16 +885,20 @@ export function PostCard({
                 <Icon name="comment" filled={false} /> {fa.format(post.comments_count)}
               </Link>
             )}
-          <button
+          <motion.button
+            whileTap={{ scale: 0.88 }}
             className={reposted ? 'react share is-on' : 'react share'}
             type="button"
-            onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) }).then(() => {
-              setReposted(true)
-              onChange({ ...post, reposts_count: post.reposts_count + 1 })
-            })}
+            onClick={() => void api(`/posts/${post.id}/repost`, { method: 'POST', body: JSON.stringify({}) })
+              .then(() => {
+                setReposted(true)
+                onChange({ ...post, reposts_count: post.reposts_count + 1 })
+                toast.show('بازنشر شد', 'success')
+              })
+              .catch((reason) => toast.show(errText(reason), 'error'))}
           >
             <Icon name="repost" /> {fa.format(post.reposts_count)}
-          </button>
+          </motion.button>
         </div>
       </div>
       {!detail && post.comments_count > 0 && (
@@ -464,7 +906,7 @@ export function PostCard({
           ? <button type="button" className="post-comments-hint" onClick={onComment}><span>مشاهده همه {fa.format(post.comments_count)} نظر</span></button>
           : <Link className="post-comments-hint" to={`/posts/${post.id}#comments`}><span>مشاهده همه {fa.format(post.comments_count)} نظر</span></Link>
       )}
-    </article>
+    </motion.article>
   )
 }
 
@@ -477,8 +919,10 @@ export function PostOwnerActions({
   onChange: (post: Post) => void
   onRemove?: () => void
 }) {
+  const toast = useToast()
   const [open, setOpen] = useState(false)
   const [editing, setEditing] = useState(false)
+  const [confirmDelete, setConfirmDelete] = useState(false)
   const [body, setBody] = useState(post.body ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -489,45 +933,56 @@ export function PostOwnerActions({
       <button className="icon-btn post-more" type="button" aria-label="گزینه‌های پست" onClick={() => setOpen(true)}>
         <Icon name="more" />
       </button>
-      {open && (
-        <Sheet onClose={() => setOpen(false)}>
-            <button className="sheet-item" type="button" onClick={() => { setOpen(false); setBody(post.body ?? ''); setEditing(true) }}>ویرایش متن</button>
-            <button
-              className="sheet-item danger"
-              type="button"
-              onClick={() => {
-                if (!window.confirm('این پست حذف شود؟')) return
-                void api(`/posts/${post.id}`, { method: 'DELETE' })
-                  .then(() => { setOpen(false); onRemove?.() })
-                  .catch((reason) => setError(errText(reason)))
-              }}
-            >
-              حذف پست
-            </button>
-            {error && <div className="error">{error}</div>}
-        </Sheet>
-      )}
-      {editing && (
-        <Sheet onClose={() => setEditing(false)}>
-          <form
-            className="stack"
-            onClick={(event) => event.stopPropagation()}
-            onSubmit={(event) => {
-              event.preventDefault()
-              setBusy(true)
-              void api<{ data: Post }>(`/posts/${post.id}`, { method: 'PATCH', body: JSON.stringify({ body }) })
-                .then((payload) => { onChange(payload.data); setEditing(false) })
-                .catch((reason) => setError(errText(reason)))
-                .finally(() => setBusy(false))
-            }}
-          >
-            <h2>ویرایش پست</h2>
-            <MentionBox multiline className="area" value={body} onChange={setBody} placeholder="متن پست — برای منشن @ بنویسید" />
-            {error && <div className="error">{error}</div>}
-            <button className="btn btn-primary" type="submit" disabled={busy}>{busy ? '...' : 'ذخیره'}</button>
-          </form>
-        </Sheet>
-      )}
+      <Sheet open={open} onClose={() => setOpen(false)}>
+        <button className="sheet-item" type="button" onClick={() => { setOpen(false); setBody(post.body ?? ''); setEditing(true) }}>
+          <Icon name="edit" /> ویرایش متن
+        </button>
+        <button className="sheet-item danger" type="button" onClick={() => { setOpen(false); setConfirmDelete(true) }}>
+          <Icon name="trash" /> حذف پست
+        </button>
+      </Sheet>
+      <ConfirmSheet
+        open={confirmDelete}
+        title="حذف پست"
+        text="این پست به‌طور کامل از فید و پروفایل شما حذف خواهد شد."
+        confirmLabel="بله، حذف شود"
+        busy={busy}
+        onClose={() => setConfirmDelete(false)}
+        onConfirm={() => {
+          setBusy(true)
+          void api(`/posts/${post.id}`, { method: 'DELETE' })
+            .then(() => {
+              setConfirmDelete(false)
+              toast.show('پست حذف شد', 'info')
+              onRemove?.()
+            })
+            .catch((reason) => toast.show(errText(reason), 'error'))
+            .finally(() => setBusy(false))
+        }}
+      />
+      <Sheet open={editing} onClose={() => setEditing(false)}>
+        <form
+          className="stack"
+          onClick={(event) => event.stopPropagation()}
+          onSubmit={(event) => {
+            event.preventDefault()
+            setBusy(true)
+            void api<{ data: Post }>(`/posts/${post.id}`, { method: 'PATCH', body: JSON.stringify({ body }) })
+              .then((payload) => {
+                onChange(payload.data)
+                setEditing(false)
+                toast.show('تغییرات ذخیره شد', 'success')
+              })
+              .catch((reason) => setError(errText(reason)))
+              .finally(() => setBusy(false))
+          }}
+        >
+          <h2>ویرایش پست</h2>
+          <MentionBox multiline className="textarea" value={body} onChange={setBody} placeholder="متن پست — برای منشن @ بنویسید" />
+          {error && <div className="error">{error}</div>}
+          <Button variant="primary" block loading={busy} type="submit">ذخیره تغییرات</Button>
+        </form>
+      </Sheet>
     </>
   )
 }

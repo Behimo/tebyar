@@ -3,21 +3,33 @@
 namespace App\Filament\Resources;
 
 use App\Filament\Access;
+use App\Filament\Labels;
 use App\Filament\Resources\UserResource\Pages\ListUsers;
 use App\Models\User;
 use App\Services\VerificationService;
+use App\Support\Present;
+use BackedEnum;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\Textarea;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
+use Filament\Support\Icons\Heroicon;
+use Filament\Tables\Columns\ImageColumn;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use UnitEnum;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
+
+    protected static string|BackedEnum|null $navigationIcon = Heroicon::OutlinedUsers;
+
+    protected static string|UnitEnum|null $navigationGroup = 'احراز و اعضا';
+
+    protected static ?int $navigationSort = 2;
 
     protected static ?string $navigationLabel = 'اعضا';
 
@@ -38,27 +50,62 @@ class UserResource extends Resource
     public static function table(Table $table): Table
     {
         return $table
+            ->defaultSort('created_at', 'desc')
+            ->emptyStateHeading('عضوی یافت نشد')
+            ->emptyStateIcon(Heroicon::OutlinedUsers)
             ->columns([
-                TextColumn::make('name')->label('نام')->searchable(),
-                TextColumn::make('phone')->label('موبایل')->toggleable(),
-                TextColumn::make('role')->label('نقش'),
-                TextColumn::make('account_status')->label('وضعیت'),
-                TextColumn::make('staff_role')->label('نقش کارکنان'),
-                TextColumn::make('city')->label('شهر'),
+                ImageColumn::make('avatar')
+                    ->label('')
+                    ->circular()
+                    ->imageSize(36)
+                    ->getStateUsing(fn (User $record): ?string => Present::publicUrl($record->avatar_path)),
+                TextColumn::make('name')
+                    ->label('نام')
+                    ->searchable()
+                    ->weight('bold')
+                    ->description(fn (User $record): ?string => $record->specialty_title ?: $record->headline),
+                TextColumn::make('phone')
+                    ->label('موبایل')
+                    ->searchable()
+                    ->toggleable(),
+                TextColumn::make('role')
+                    ->label('نقش')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => Labels::userRole($state))
+                    ->color(fn (?string $state): string => Labels::userRoleColor($state)),
+                TextColumn::make('account_status')
+                    ->label('وضعیت')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => Labels::accountStatus($state))
+                    ->color(fn (?string $state): string => Labels::accountStatusColor($state)),
+                TextColumn::make('staff_role')
+                    ->label('نقش کارکنان')
+                    ->badge()
+                    ->formatStateUsing(fn (?string $state): string => Labels::staffRole($state))
+                    ->color(fn (?string $state): string => Labels::staffRoleColor($state)),
+                TextColumn::make('city')
+                    ->label('شهر')
+                    ->placeholder('—')
+                    ->toggleable(),
+                TextColumn::make('created_at')
+                    ->label('عضویت')
+                    ->since()
+                    ->tooltip(fn (User $record): string => $record->created_at?->format('Y-m-d H:i') ?? '')
+                    ->sortable(),
             ])
             ->filters([
                 SelectFilter::make('account_status')->label('وضعیت')->options([
-                    'pending_review' => 'در انتظار',
+                    'pending_review' => 'در انتظار بررسی',
                     'verified' => 'تأییدشده',
                     'needs_correction' => 'نیازمند اصلاح',
-                    'suspended' => 'تعلیق',
-                    'revoked' => 'لغو',
+                    'suspended' => 'تعلیق‌شده',
+                    'revoked' => 'لغوشده',
                 ]),
                 SelectFilter::make('role')->label('نقش')->options([
                     'student' => 'دانشجو',
                     'intern' => 'اینترن',
                     'resident' => 'رزیدنت',
-                    'general' => 'عمومی',
+                    'general' => 'پزشک عمومی',
                     'specialist' => 'متخصص',
                     'employer' => 'کارفرما',
                 ]),
@@ -66,22 +113,26 @@ class UserResource extends Resource
             ->recordActions([
                 Action::make('status')
                     ->label('وضعیت حساب')
-                    ->visible(fn () => Access::allows(['admin']))
+                    ->icon(Heroicon::OutlinedShieldCheck)
+                    ->color('warning')
+                    ->visible(fn (): bool => Access::allows(['admin']))
                     ->schema([
                         Select::make('status')->label('وضعیت')->options([
                             'verified' => 'تأییدشده',
                             'needs_correction' => 'نیازمند اصلاح',
-                            'suspended' => 'تعلیق',
-                            'revoked' => 'لغو',
+                            'suspended' => 'تعلیق‌شده',
+                            'revoked' => 'لغوشده',
                         ])->required(),
                         Textarea::make('note')->label('یادداشت'),
                     ])
-                    ->action(function (User $record, array $data) {
+                    ->action(function (User $record, array $data): void {
                         app(VerificationService::class)->setAccountStatus($record, auth()->user(), $data['status'], $data['note'] ?? null);
                     }),
                 Action::make('staff')
                     ->label('نقش کارکنان')
-                    ->visible(fn () => Access::allows(['admin']))
+                    ->icon(Heroicon::OutlinedIdentification)
+                    ->color('gray')
+                    ->visible(fn (): bool => Access::allows(['admin']))
                     ->schema([
                         Select::make('staff_role')->label('نقش')->options([
                             '' => 'بدون نقش',
@@ -90,7 +141,7 @@ class UserResource extends Resource
                             'admin' => 'ادمین',
                         ]),
                     ])
-                    ->action(function (User $record, array $data) {
+                    ->action(function (User $record, array $data): void {
                         $record->staff_role = $data['staff_role'] ?: null;
                         $record->save();
                     }),
