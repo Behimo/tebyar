@@ -9,8 +9,8 @@ COPY --chown=www:www-data apps/api/ ./
 
 RUN cp .env.example .env \
     && sed -i 's/^APP_ENV=.*/APP_ENV=production/; s/^APP_DEBUG=.*/APP_DEBUG=false/' .env \
-    && php artisan key:generate --force --ansi \
-    && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader
+    && composer install --no-dev --no-interaction --prefer-dist --optimize-autoloader \
+    && php artisan key:generate --force --ansi
 
 RUN if command -v npm >/dev/null 2>&1; then \
         npm install --ignore-scripts && npm run build && rm -rf node_modules; \
