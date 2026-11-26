@@ -16,7 +16,8 @@ RUN if command -v npm >/dev/null 2>&1; then \
         npm install --ignore-scripts && npm run build && rm -rf node_modules; \
     fi
 
-RUN chown -R www:www-data /var/www/storage /var/www/bootstrap/cache
+RUN echo "clear_env = no" >> /usr/local/etc/php-fpm.d/www.conf \
+    && chown -R www-data:www-data /var/www/storage /var/www/bootstrap/cache
 
 EXPOSE 80
 
