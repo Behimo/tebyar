@@ -17,3 +17,7 @@ RUN if command -v npm >/dev/null 2>&1; then \
     fi
 
 RUN chown -R www:www-data /var/www/storage /var/www/bootstrap/cache
+
+EXPOSE 80
+
+CMD ["sh", "-c", "php-fpm -D && exec nginx -g 'daemon off;'"]
