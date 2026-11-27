@@ -16,6 +16,7 @@ use Filament\Support\Icons\Heroicon;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
+use Illuminate\Support\Facades\Schema as DatabaseSchema;
 use UnitEnum;
 
 class SubscriptionResource extends Resource
@@ -41,6 +42,10 @@ class SubscriptionResource extends Resource
 
     public static function getNavigationBadge(): ?string
     {
+        if (! DatabaseSchema::hasTable('subscriptions')) {
+            return null;
+        }
+
         $count = Subscription::query()->where('status', 'pending')->count();
 
         return $count > 0 ? (string) $count : null;
