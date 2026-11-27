@@ -35,12 +35,21 @@ const communitiesKey = 'tebyar-communities'
 const feedMemory: { suggested?: Post[]; following?: Post[]; stories?: Story[] } = {}
 const storiesKey = 'tebyar-stories'
 
+function activeStories(rows: Story[]): Story[] {
+  const now = Date.now()
+  return rows.filter((row) => {
+    if (!row.expires_at) return true
+    const expires = Date.parse(row.expires_at)
+    return Number.isNaN(expires) || expires > now
+  })
+}
+
 function readStories(): Story[] {
-  if (feedMemory.stories) return feedMemory.stories
+  if (feedMemory.stories) return activeStories(feedMemory.stories)
   try {
     const raw = sessionStorage.getItem(storiesKey)
     if (!raw) return []
-    const rows = JSON.parse(raw) as Story[]
+    const rows = activeStories(JSON.parse(raw) as Story[])
     feedMemory.stories = rows
     return rows
   } catch {
@@ -49,8 +58,9 @@ function readStories(): Story[] {
 }
 
 function writeStories(rows: Story[]) {
-  feedMemory.stories = rows
-  sessionStorage.setItem(storiesKey, JSON.stringify(rows))
+  const active = activeStories(rows)
+  feedMemory.stories = active
+  sessionStorage.setItem(storiesKey, JSON.stringify(active))
 }
 
 function readPosts(tab: 'suggested' | 'following'): Post[] | null {
@@ -120,8 +130,10 @@ function StoryReel({
   const [note, setNote] = useState('')
   const [menu, setMenu] = useState(false)
   const [paused, setPaused] = useState(false)
+  const [mediaState, setMediaState] = useState<{ id: number; loading: boolean }>({ id: 0, loading: true })
   const items = groups[group] ?? []
   const story = items[index]
+  const mediaLoading = mediaState.id !== story?.id || mediaState.loading
 
   const go = (dir: 1 | -1) => {
     setNote('')
@@ -147,10 +159,23 @@ function StoryReel({
   }, [story?.id])
 
   useEffect(() => {
-    if (menu || paused) return
+    setNote('')
+  }, [story?.id])
+
+  useEffect(() => {
+    const preload = [items[index + 1], items[index - 1], groups[group + 1]?.[0], groups[group - 1]?.[0]]
+    for (const item of preload) {
+      if (!item?.media_url) continue
+      const image = new Image()
+      image.src = assetUrl(item.media_url, 1080) ?? item.media_url
+    }
+  }, [group, groups, index, items])
+
+  useEffect(() => {
+    if (menu || paused || mediaLoading) return
     const timer = window.setTimeout(() => go(1), 5000)
     return () => window.clearTimeout(timer)
-  }, [index, group, menu, paused])
+  }, [index, group, menu, paused, mediaLoading])
 
   useEffect(() => {
     document.body.dataset.cover = 'story'
@@ -163,7 +188,7 @@ function StoryReel({
     : null
   return createPortal(
     <div
-      className={`story-viewer is-open${paused ? ' is-paused' : ''}`}
+      className={`story-viewer is-open${paused ? ' is-paused' : ''}${mediaLoading ? ' is-loading' : ''}`}
       onPointerDown={() => setPaused(true)}
       onPointerUp={() => setPaused(false)}
       onPointerCancel={() => setPaused(false)}
@@ -198,7 +223,19 @@ function StoryReel({
         </span>
       </div>
       {note && <p className="story-note">{note}</p>}
-      <div className="media"><img src={assetUrl(story.media_url) || story.media_url} alt="" onError={() => setNote('این تصویر روی گوشی باز نشد.')} /></div>
+      <div className="media">
+        <img
+          key={story.id}
+          src={assetUrl(story.media_url, 1080) || story.media_url}
+          alt=""
+          onLoad={() => setMediaState({ id: story.id, loading: false })}
+          onError={() => {
+            setMediaState({ id: story.id, loading: false })
+            setNote('این تصویر روی گوشی باز نشد.')
+          }}
+        />
+        {mediaLoading && <div className="story-media-loading" aria-hidden="true"><span className="btn-spinner" /></div>}
+      </div>
       <button className="story-hit story-hit-next" type="button" aria-label="بعدی" onClick={() => go(1)} />
       <button className="story-hit story-hit-prev" type="button" aria-label="قبلی" onClick={() => go(-1)} />
       <Sheet front open={menu} onClose={() => setMenu(false)}>
@@ -270,7 +307,18 @@ export function Home() {
     }).catch(() => undefined).finally(() => {
       if (!gone) setStoriesLoaded(true)
     })
-    return () => { gone = true }
+    const expiryTimer = window.setInterval(() => {
+      setStories((current) => {
+        const active = activeStories(current)
+        if (active.length === current.length) return current
+        writeStories(active)
+        return active
+      })
+    }, 30000)
+    return () => {
+      gone = true
+      window.clearInterval(expiryTimer)
+    }
   }, [])
 
   const publishStory = async (file: File) => {
@@ -287,11 +335,8 @@ export function Home() {
         return next
       })
       const storyList = await api<{ data: Story[] }>('/stories')
-      setStories((current) => {
-        const next = mergeStoryLists(current, storyList.data)
-        writeStories(next)
-        return next
-      })
+      writeStories(storyList.data)
+      setStories(storyList.data)
       URL.revokeObjectURL(preview)
       setStoryPreview(null)
       void refresh()
@@ -306,7 +351,7 @@ export function Home() {
   }
 
   const tiles = buildStoryTiles(stories, user, storiesLoaded)
-  const ownCover = storyPreview || assetUrl(mine[mine.length - 1]?.media_url)
+  const ownCover = storyPreview || assetUrl(mine[mine.length - 1]?.media_url, 240)
   const mineUnseen = mine.some((row) => !row.seen)
 
   const storyGroups = () => {
@@ -346,7 +391,7 @@ export function Home() {
           <div className={`story story-own${ownCover ? ' has-story' : ''}${mineUnseen ? ' is-unseen' : ownCover ? ' is-seen' : ''}${storyUploading ? ' is-uploading' : ''}`}>
             {ownCover ? (
               <button className="story-tile" type="button" onClick={() => openReel(user?.id ?? null, 0)}>
-                <img src={ownCover} alt="" /><span className="caption">شما</span>
+                <img src={ownCover} alt="" decoding="async" /><span className="caption">شما</span>
               </button>
             ) : (
               <label className="story-tile">
@@ -382,7 +427,7 @@ export function Home() {
                 }
               }}
             >
-              <span className="story-tile"><img src={assetUrl(story.src) || story.src} alt="" /><span className="caption">{story.name}</span></span>
+              <span className="story-tile"><img src={assetUrl(story.src, 240) || story.src} alt="" loading="lazy" decoding="async" /><span className="caption">{story.name}</span></span>
             </button>
           ))}
         </div>

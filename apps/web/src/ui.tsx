@@ -380,26 +380,37 @@ export function Sheet({
 }
 
 /* ---------------- Media & Cards ---------------- */
-export function postCover(post: Post): string | undefined {
+export function postCover(post: Post, width?: number): string | undefined {
   const own = post.media[0]?.url
-    ? assetUrl(post.media[0].url)
+    ? assetUrl(post.media[0].url, width)
     : (post.is_demo ? covers[post.author.slug || ''] : undefined)
   if (own) return own
-  if (post.repost_of) return postCover(post.repost_of)
+  if (post.repost_of) return postCover(post.repost_of, width)
   return undefined
 }
 
 export function MediaCarousel({ post, className = '' }: { post: Post; className?: string }) {
   const cover = postCover(post)
-  const slides = post.media.length > 0
+  const slides = useMemo(() => post.media.length > 0
     ? post.media
     : cover
       ? [{ url: cover, kind: 'image' as const }]
-      : []
+      : [], [cover, post.media])
   const [index, setIndex] = useState(0)
   const touchStart = useRef<number | null>(null)
+  const activeIndex = Math.min(index, Math.max(0, slides.length - 1))
+  const activeSlide = slides[activeIndex]
 
-  if (slides.length === 0) return null
+  useEffect(() => {
+    for (const slide of [slides[activeIndex + 1], slides[activeIndex - 1]]) {
+      if (slide?.kind === 'image') {
+        const image = new Image()
+        image.src = assetUrl(slide.url, 720) ?? ''
+      }
+    }
+  }, [activeIndex, slides])
+
+  if (!activeSlide) return null
 
   const onTouchStart = (event: TouchEvent) => { touchStart.current = event.touches[0]?.clientX ?? null }
   const onTouchEnd = (event: TouchEvent) => {
@@ -413,14 +424,12 @@ export function MediaCarousel({ post, className = '' }: { post: Post; className?
 
   return (
     <div className={`media-carousel ${className}`} onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
-      {slides.map((slide, i) => (
-        slide.kind === 'video'
-          ? <video key={i} className="media-natural" src={assetUrl(slide.url)} controls playsInline hidden={i !== index} />
-          : <img key={i} className="media-natural" src={assetUrl(slide.url)} alt="" decoding="async" hidden={i !== index} />
-      ))}
+      {activeSlide.kind === 'video'
+        ? <video key={`${activeSlide.url}-${activeIndex}`} className="media-natural" src={assetUrl(activeSlide.url)} controls playsInline preload="metadata" />
+        : <img key={`${activeSlide.url}-${activeIndex}`} className="media-natural" src={assetUrl(activeSlide.url, 720)} alt="" decoding="async" />}
       {slides.length > 1 && (
         <>
-          {index > 0 && (
+          {activeIndex > 0 && (
             <button
               type="button"
               className="media-nav media-nav--prev"
@@ -430,7 +439,7 @@ export function MediaCarousel({ post, className = '' }: { post: Post; className?
               <Icon name="chevronRight" />
             </button>
           )}
-          {index < slides.length - 1 && (
+          {activeIndex < slides.length - 1 && (
             <button
               type="button"
               className="media-nav media-nav--next"
@@ -442,10 +451,10 @@ export function MediaCarousel({ post, className = '' }: { post: Post; className?
           )}
           <div className="media-dots">
             {slides.map((_, i) => (
-              <button key={i} type="button" className={i === index ? 'dot is-on' : 'dot'} aria-label={`اسلاید ${i + 1}`} onClick={(event) => { event.stopPropagation(); setIndex(i) }} />
+              <button key={i} type="button" className={i === activeIndex ? 'dot is-on' : 'dot'} aria-label={`اسلاید ${i + 1}`} onClick={(event) => { event.stopPropagation(); setIndex(i) }} />
             ))}
           </div>
-          <span className="media-count">{fa.format(index + 1)}/{fa.format(slides.length)}</span>
+          <span className="media-count">{fa.format(activeIndex + 1)}/{fa.format(slides.length)}</span>
         </>
       )}
     </div>
@@ -478,8 +487,8 @@ export function Avatar({
   small?: boolean
 }) {
   const cls = large ? 'avatar lg' : small ? 'avatar sm' : 'avatar'
-  const src = assetUrl(user.avatar_url) || (user.slug ? portraits[user.slug] : undefined)
-  if (src) return <img className={cls} src={src} alt="" />
+  const src = assetUrl(user.avatar_url, large ? 240 : 128) || (user.slug ? portraits[user.slug] : undefined)
+  if (src) return <img className={cls} src={src} alt="" loading="lazy" decoding="async" />
   return <span className={cls} style={{ display: 'grid', placeItems: 'center', fontWeight: 700 }}>{user.name.trim().charAt(0)}</span>
 }
 
@@ -788,7 +797,7 @@ export function PostCard({
       </div>
     </>
   )
-  const repostCover = post.repost_of ? postCover(post.repost_of) : undefined
+  const repostCover = post.repost_of ? postCover(post.repost_of, 480) : undefined
 
   return (
     <motion.article

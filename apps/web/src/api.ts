@@ -70,19 +70,20 @@ export function api<T>(path: string, init: RequestInit = {}): Promise<T> {
 }
 
 /** مسیر رسانه را به مبدأ درست وصل می‌کند: وب از همان origin، اپ از VITE_API_URL */
-export function assetUrl(url?: string | null): string | undefined {
+export function assetUrl(url?: string | null, width?: number): string | undefined {
   if (!url) return undefined
   const base = (import.meta.env.VITE_API_URL || '').replace(/\/$/, '')
+  const withWidth = (path: string) => width ? `${path}${path.includes('?') ? '&' : '?'}width=${width}` : path
   const mediaPath = (path: string) => {
     if (path.startsWith('/storage/')) return `/api/v1/media${path.slice('/storage'.length)}`
     if (path.startsWith('/api/v1/media/')) return path
     return null
   }
   const local = mediaPath(url)
-  if (local) return `${base}${local}`
+  if (local) return `${base}${withWidth(local)}`
   try {
     const remote = mediaPath(new URL(url).pathname)
-    if (remote) return `${base}${remote}`
+    if (remote) return `${base}${withWidth(remote)}`
   } catch {
     return url
   }

@@ -23,6 +23,20 @@ export default defineConfig({
       registerType: 'autoUpdate',
       devOptions: { enabled: false },
       includeAssets: ['favicon.svg'],
+      workbox: {
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/v1/media/'),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tebyar-media',
+              cacheableResponse: { statuses: [200] },
+              expiration: { maxEntries: 160, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
+        ],
+      },
       manifest: {
         name: 'طبیار',
         short_name: 'طبیار',

@@ -412,7 +412,7 @@ function PostGridCell({
     impressionSource ?? 'profile',
     Boolean(impressionSource) && !post.author.is_self,
   )
-  const cover = postCover(post)
+  const cover = postCover(post, 480)
   const label = post.body?.slice(0, 72) || post.link_title || 'پست'
   const inner = (
     <>
