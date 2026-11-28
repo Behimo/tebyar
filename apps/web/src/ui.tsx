@@ -18,7 +18,7 @@ import { Link, useNavigate } from 'react-router-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { api, assetUrl, when } from './api'
 import { useImpression, type ImpressionSource } from './impressions'
-import type { Post, UserCard } from './types'
+import type { AudienceGroup, Post, UserCard } from './types'
 import { Brand, Icon } from './icons'
 
 const fa = new Intl.NumberFormat('fa-IR')
@@ -149,6 +149,65 @@ export function Field({
       {help && !error && <p className="help">{help}</p>}
       {error && <p className="field-error">{error}</p>}
     </div>
+  )
+}
+
+export function AudiencePicker({
+  groups,
+  value,
+  onChange,
+}: {
+  groups: AudienceGroup[]
+  value: string[]
+  onChange: (keys: string[]) => void
+}) {
+  const allKeys = groups.map((group) => group.key)
+  const allSelected = allKeys.length > 0 && allKeys.every((key) => value.includes(key))
+
+  const toggle = (key: string) => {
+    if (value.includes(key)) {
+      const next = value.filter((item) => item !== key)
+      onChange(next.length > 0 ? next : value)
+    } else {
+      onChange([...value, key])
+    }
+  }
+
+  return (
+    <Field label="مخاطبان این محتوا" help="پیش‌فرض نمایش برای همه است؛ می‌توانید گروه‌های خاص را انتخاب کنید.">
+      <div className="audience-picker">
+        <button
+          type="button"
+          className={allSelected ? 'audience-chip is-on' : 'audience-chip'}
+          onClick={() => onChange(allKeys)}
+        >
+          <Icon name="users" /> همه
+        </button>
+        {groups.map((group) => {
+          const on = value.includes(group.key)
+          return (
+            <button
+              key={group.key}
+              type="button"
+              className={on && !allSelected ? 'audience-chip is-on' : 'audience-chip'}
+              onClick={() => toggle(group.key)}
+            >
+              {on && !allSelected ? <Icon name="check" /> : null}
+              {group.label}
+            </button>
+          )
+        })}
+      </div>
+    </Field>
+  )
+}
+
+export function AudienceBadge({ labels }: { labels?: string[] }) {
+  if (!labels || labels.length === 0) return null
+  return (
+    <span className="chip" title={`نمایش برای: ${labels.join('، ')}`}>
+      <Icon name="lock" /> {labels.join('، ')}
+    </span>
   )
 }
 

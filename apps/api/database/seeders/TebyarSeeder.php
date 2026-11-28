@@ -141,6 +141,52 @@ class TebyarSeeder extends Seeder
             'identity_verified_at' => null,
         ]);
 
+        $this->person([
+            'name' => 'دکتر مریم صادقی',
+            'phone' => '09121000017',
+            'slug' => 'maryam-sadeghi',
+            'role' => 'pharmacist',
+            'specialty_title' => 'داروساز',
+            'headline' => 'داروخانه شبانه‌روزی، تهران',
+            'city' => 'تهران',
+            'identity_verified_at' => now(),
+            'license_verified_at' => now(),
+        ]);
+
+        $this->person([
+            'name' => 'زهرا حسینی',
+            'phone' => '09121000018',
+            'slug' => 'zahra-hosseini',
+            'role' => 'nurse',
+            'specialty_title' => 'پرستار بخش',
+            'headline' => 'بیمارستان آتیه، کرج',
+            'city' => 'کرج',
+            'identity_verified_at' => now(),
+            'license_verified_at' => now(),
+        ]);
+
+        $this->person([
+            'name' => 'دکتر امید کاظمی',
+            'phone' => '09121000019',
+            'slug' => 'omid-kazemi',
+            'role' => 'veterinarian',
+            'specialty_title' => 'دامپزشک',
+            'headline' => 'کلینیک دامپزشکی، تبریز',
+            'city' => 'تبریز',
+            'identity_verified_at' => now(),
+            'license_verified_at' => now(),
+        ]);
+
+        $this->person([
+            'name' => 'سارینا احمدی',
+            'phone' => '09121000020',
+            'slug' => 'sarina',
+            'role' => 'public',
+            'city' => 'رشت',
+            'license_verified_at' => null,
+            'identity_verified_at' => null,
+        ]);
+
         $employer = $this->person([
             'name' => 'روابط علمی مرکز درمان تهران',
             'email' => 'jobs@tebyar.test',
@@ -193,6 +239,26 @@ class TebyarSeeder extends Seeder
             'name' => 'پزشکی عمومی',
             'specialty' => 'پزشکی عمومی',
             'description' => 'فضای مشترک پزشکان عمومی.',
+        ]);
+        Community::query()->updateOrCreate(['slug' => 'pharmacy'], [
+            'name' => 'انجمن داروسازی',
+            'specialty' => 'داروسازی',
+            'description' => 'گفت‌وگوی داروسازان درباره داروها، تداخل‌ها و تجربه داروخانه.',
+        ]);
+        Community::query()->updateOrCreate(['slug' => 'nursing'], [
+            'name' => 'انجمن پرستاری',
+            'specialty' => 'پرستاری',
+            'description' => 'تبادل تجربه پرستاران در مراقبت بالینی و کار بخش.',
+        ]);
+        Community::query()->updateOrCreate(['slug' => 'veterinary'], [
+            'name' => 'انجمن دامپزشکی',
+            'specialty' => 'دامپزشکی',
+            'description' => 'فضای تخصصی دامپزشکان برای مرور تجربه‌های بالینی دامی.',
+        ]);
+        Community::query()->updateOrCreate(['slug' => 'public-health'], [
+            'name' => 'پرسش‌های عمومی سلامت',
+            'specialty' => 'سلامت عمومی',
+            'description' => 'فضای پرسش عمومی مردم و دانشجویان؛ پاسخ‌ها توصیه درمانی نیست.',
         ]);
 
         if (! Post::query()->where('is_demo', true)->exists()) {

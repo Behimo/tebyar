@@ -49,7 +49,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(payload.data)
       if (payload.data.account_status === 'verified' && payload.data.role !== 'employer') {
         window.setTimeout(() => {
-          void api<{ data: unknown }>('/conversations').then((p) => writeCache('tebyar-conversations', p.data)).catch(() => undefined)
+          if (payload.data.permissions?.message ?? true) {
+            void api<{ data: unknown }>('/conversations').then((p) => writeCache('tebyar-conversations', p.data)).catch(() => undefined)
+          }
           void api<{ data: unknown }>('/communities').then((p) => writeCache('tebyar-communities', p.data)).catch(() => undefined)
         }, 1200)
       }

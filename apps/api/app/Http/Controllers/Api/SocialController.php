@@ -18,6 +18,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class SocialController extends Controller
@@ -27,7 +28,7 @@ class SocialController extends Controller
         $viewer = $request->user();
         $tab = $request->string('tab')->toString() ?: 'suggested';
         $hidden = Present::hiddenIds($viewer);
-        $query = Post::query()->visible();
+        $query = Post::query()->visible()->visibleTo($viewer);
         if ($hidden !== []) {
             $query->whereNotIn('user_id', $hidden);
         }
@@ -98,6 +99,8 @@ class SocialController extends Controller
             'media' => ['nullable', 'array', 'max:6'],
             'media.*' => ['file', 'mimes:jpg,jpeg,png,webp,mp4,webm', 'max:51200'],
             'cover_index' => ['nullable', 'integer', 'min:0'],
+            'audience' => ['nullable', 'array', 'min:1', 'max:7'],
+            'audience.*' => ['string', Rule::in(array_keys(Membership::AUDIENCE_GROUPS))],
         ]);
 
         if (empty($data['body']) && empty($data['link_url']) && ! $request->hasFile('media')) {
@@ -112,12 +115,15 @@ class SocialController extends Controller
             $type = 'link';
         }
 
-        $post = DB::transaction(function () use ($request, $user, $data, $type) {
+        $audience = Membership::normalizeAudience($user, $data['audience'] ?? null);
+
+        $post = DB::transaction(function () use ($request, $user, $data, $type, $audience) {
             $post = $user->posts()->create([
                 'type' => $type,
                 'body' => $data['body'] ?? null,
                 'link_url' => $data['link_url'] ?? null,
                 'link_title' => $data['link_title'] ?? null,
+                'audience' => $audience,
             ]);
 
             $files = array_values($request->file('media', []));
@@ -233,7 +239,7 @@ class SocialController extends Controller
     public function repost(Request $request, Post $post): JsonResponse
     {
         $this->visible($post, $request->user());
-        $this->assertCanPost($request->user());
+        abort_unless(Membership::isActiveMember($request->user()), 403, 'بازنشر برای این حساب فعال نیست.');
         $data = $request->validate(['body' => ['nullable', 'string', 'max:1000']]);
         $original = $post->repost_of_id ? $post->original : $post;
 
@@ -241,6 +247,7 @@ class SocialController extends Controller
             'type' => 'repost',
             'body' => $data['body'] ?? null,
             'repost_of_id' => $original->id,
+            'audience' => $original->audience,
         ]);
 
         if ($original->user_id !== $request->user()->id) {
@@ -270,7 +277,7 @@ class SocialController extends Controller
     public function bookmarks(Request $request): JsonResponse
     {
         $viewer = $request->user();
-        $posts = Post::query()->visible()
+        $posts = Post::query()->visible()->visibleTo($viewer)
             ->whereIn('posts.id', Bookmark::query()->where('user_id', $viewer->id)->pluck('post_id'))
             ->with(['author', 'media', 'hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])
@@ -343,20 +350,20 @@ class SocialController extends Controller
         if (! Membership::canPostSocial($user)) {
             abort(403, 'انتشار محتوا برای این حساب فعال نیست.');
         }
-
-        if (Membership::isLearner($user)) {
-            $count = $user->posts()->where('created_at', '>=', now()->startOfDay())->count();
-            if ($count >= (int) config('tebyar.student_daily_posts')) {
-                throw ValidationException::withMessages([
-                    'body' => 'سقف انتشار امروز برای حساب دانشجویی پر شده است.',
-                ]);
-            }
-        }
     }
 
     private function visible(Post $post, User $viewer): void
     {
         if ($post->hidden_at || $post->removed_at || in_array($post->user_id, Present::hiddenIds($viewer), true)) {
+            abort(404);
+        }
+
+        if (! $post->isVisibleTo($viewer)) {
+            abort(404);
+        }
+
+        $original = $post->repost_of_id ? $post->original : null;
+        if ($original && (! $original->isVisibleTo($viewer) || $original->hidden_at || $original->removed_at)) {
             abort(404);
         }
     }

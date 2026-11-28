@@ -6,23 +6,43 @@ use App\Models\Organization;
 use App\Models\User;
 use App\Models\UserIdentity;
 use App\Models\VerificationRequest;
+use App\Support\Membership;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
 
 class VerificationService
 {
-    public function submitProfile(User $user, array $data, ?UploadedFile $document): VerificationRequest
+    public function submitProfile(User $user, array $data, ?UploadedFile $document): ?VerificationRequest
     {
         return DB::transaction(function () use ($user, $data, $document) {
             $role = $data['role'];
+            $restricted = in_array($role, Membership::RESTRICTED, true);
             $user->fill([
                 'name' => $data['name'],
                 'role' => $role,
                 'city' => $data['city'] ?? null,
                 'specialty_title' => $data['specialty_title'] ?? null,
-                'account_status' => 'pending_review',
+                'account_status' => $restricted ? 'verified' : 'pending_review',
             ])->save();
+
+            if ($restricted) {
+                $identity = UserIdentity::query()->firstOrNew(['user_id' => $user->id]);
+                $identity->fill([
+                    'university' => $data['university'] ?? null,
+                    'student_number' => $data['student_number'] ?? null,
+                ]);
+
+                if ($document) {
+                    $identity->document_path = $document->store('members', 'identity');
+                }
+
+                $identity->save();
+
+                AuditLogger::record($user, 'account.auto_verified', $user, ['role' => $role]);
+
+                return null;
+            }
 
             if ($role === 'employer') {
                 $path = $document?->store('organizations', 'identity');
@@ -58,9 +78,7 @@ class VerificationService
 
             $identity->save();
 
-            $type = in_array($role, ['student', 'intern'], true) ? 'education' : 'license';
-
-            return $this->open($user, $type, ['role' => $role]);
+            return $this->open($user, 'license', ['role' => $role]);
         });
     }
 

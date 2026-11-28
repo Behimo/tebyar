@@ -9,9 +9,13 @@ class Labels
         return match ($role) {
             'student' => 'دانشجو',
             'intern' => 'اینترن',
-            'resident' => 'رزیدنت',
+            'resident' => 'دستیار تخصصی',
             'general' => 'پزشک عمومی',
-            'specialist' => 'متخصص',
+            'specialist' => 'پزشک متخصص',
+            'pharmacist' => 'داروساز',
+            'nurse' => 'پرستار',
+            'veterinarian' => 'دامپزشک',
+            'public' => 'عموم مردم',
             'employer' => 'کارفرما',
             default => 'نامشخص',
         };
@@ -21,8 +25,8 @@ class Labels
     {
         return match ($role) {
             'specialist' => 'primary',
-            'general', 'resident' => 'info',
-            'student', 'intern' => 'gray',
+            'general', 'resident', 'pharmacist', 'nurse', 'veterinarian' => 'info',
+            'student', 'intern', 'public' => 'gray',
             'employer' => 'warning',
             default => 'gray',
         };
@@ -76,7 +80,7 @@ class Labels
     {
         return match ($type) {
             'education' => 'تحصیلی',
-            'license' => 'نظام پزشکی',
+            'license' => 'کد نظام حرفه‌ای',
             'specialty' => 'تخصص',
             'organization' => 'مرکز درمانی',
             default => $type ?? 'نامشخص',
@@ -206,6 +210,7 @@ class Labels
             'case' => 'کیس بالینی',
             'poll' => 'نظرسنجی',
             'discussion' => 'بحث تخصصی',
+            'question' => 'پرسش',
             default => $kind ?? 'موضوع',
         };
     }
@@ -216,6 +221,7 @@ class Labels
             'case' => 'warning',
             'poll' => 'info',
             'discussion' => 'primary',
+            'question' => 'success',
             default => 'gray',
         };
     }

@@ -57,4 +57,21 @@ class UserFactory extends Factory
             'pro_until' => now()->addMonths($months),
         ]);
     }
+
+    public function restricted(string $role = 'public'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => $role,
+            'specialty_title' => null,
+            'license_verified_at' => null,
+            'identity_verified_at' => null,
+        ]);
+    }
+
+    public function professional(string $role = 'specialist'): static
+    {
+        return $this->state(fn (array $attributes) => [
+            'role' => $role,
+        ]);
+    }
 }

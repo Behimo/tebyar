@@ -39,8 +39,8 @@ class RolesChart extends ChartWidget
             ->groupBy('role_key')
             ->pluck('total', 'role_key');
 
-        $order = ['specialist', 'general', 'resident', 'intern', 'student', 'employer'];
-        $palette = ['#2F6FED', '#12A8A8', '#7B5CDB', '#FF8070', '#F59E0B', '#10B981'];
+        $order = ['specialist', 'general', 'resident', 'pharmacist', 'nurse', 'veterinarian', 'intern', 'student', 'public', 'employer'];
+        $palette = ['#2F6FED', '#12A8A8', '#7B5CDB', '#0EA5E9', '#F472B6', '#84CC16', '#FF8070', '#F59E0B', '#94A3B8', '#10B981'];
 
         $labels = [];
         $data = [];

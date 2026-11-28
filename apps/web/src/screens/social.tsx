@@ -8,6 +8,8 @@ import { recordDetailView } from '../impressions'
 import { QuotaHint } from '../pro'
 import type { Conversation, Notice, Post, Story, Topic, Reply, CommunityCard } from '../types'
 import {
+  AudienceBadge,
+  AudiencePicker,
   Avatar,
   Badges,
   Button,
@@ -82,27 +84,31 @@ function writePosts(tab: 'suggested' | 'following', posts: Post[]) {
 }
 
 function useInboxBadges() {
+  const { user } = useAuth()
   const [messages, setMessages] = useState(0)
   const [notices, setNotices] = useState(0)
+  const canMessage = user?.permissions?.message ?? true
   useEffect(() => {
     const timer = window.setTimeout(() => {
-      const cachedConvs = readCache<Conversation[]>('tebyar-conversations')
-      if (cachedConvs) {
-        setMessages(cachedConvs.filter((item) => item.unread).length)
-      } else {
-        void api<{ data: Conversation[] }>('/conversations')
-          .then((payload) => {
-            writeCache('tebyar-conversations', payload.data)
-            setMessages(payload.data.filter((item) => item.unread).length)
-          })
-          .catch(() => undefined)
+      if (canMessage) {
+        const cachedConvs = readCache<Conversation[]>('tebyar-conversations')
+        if (cachedConvs) {
+          setMessages(cachedConvs.filter((item) => item.unread).length)
+        } else {
+          void api<{ data: Conversation[] }>('/conversations')
+            .then((payload) => {
+              writeCache('tebyar-conversations', payload.data)
+              setMessages(payload.data.filter((item) => item.unread).length)
+            })
+            .catch(() => undefined)
+        }
       }
       void api<{ data: Notice[] }>('/notifications')
         .then((payload) => setNotices(payload.data.filter((item) => !item.read_at).length))
         .catch(() => undefined)
     }, 600)
     return () => window.clearTimeout(timer)
-  }, [])
+  }, [canMessage])
   return { messages, notices }
 }
 
@@ -376,10 +382,12 @@ export function Home() {
         <Brand />
         <div className="topbar-actions">
           <Link className="icon-btn" to="/explore" aria-label="اکسپلور"><Icon name="explore" /></Link>
-          <Link className="icon-btn" to="/messages" aria-label="پیام‌ها">
-            <Icon name="direct" />
-            {badges.messages > 0 && <span className="badge">{badges.messages > 9 ? '۹+' : String(badges.messages)}</span>}
-          </Link>
+          {(user?.permissions?.message ?? true) && (
+            <Link className="icon-btn" to="/messages" aria-label="پیام‌ها">
+              <Icon name="direct" />
+              {badges.messages > 0 && <span className="badge">{badges.messages > 9 ? '۹+' : String(badges.messages)}</span>}
+            </Link>
+          )}
           <Link className="icon-btn" to="/notifications" aria-label="اعلان‌ها">
             <Icon name="bell" />
             {badges.notices > 0 && <span className="badge">{badges.notices > 9 ? '۹+' : String(badges.notices)}</span>}
@@ -388,6 +396,7 @@ export function Home() {
       </header>
       <div className="screen-body">
         <div className="stories" dir="rtl" aria-label="استوری‌ها">
+          {(user?.permissions?.story ?? true) && (
           <div className={`story story-own${ownCover ? ' has-story' : ''}${mineUnseen ? ' is-unseen' : ownCover ? ' is-seen' : ''}${storyUploading ? ' is-uploading' : ''}`}>
             {ownCover ? (
               <button className="story-tile" type="button" onClick={() => openReel(user?.id ?? null, 0)}>
@@ -415,6 +424,7 @@ export function Home() {
               </label>
             )}
           </div>
+          )}
           {tiles.map((story) => (
             <button
               key={story.id}
@@ -542,6 +552,10 @@ export function Compose() {
   const [busy, setBusy] = useState(false)
   const [slides, setSlides] = useState<import('../post-ui').ComposeSlide[]>([])
   const [coverIndex, setCoverIndex] = useState(0)
+  const audienceGroups = user?.audience_groups ?? []
+  const [audience, setAudience] = useState<string[]>(() => (user?.audience_groups ?? []).map((group) => group.key))
+  const canPickAudience = user?.permissions?.audience && audienceGroups.length > 0
+  const audienceAll = audienceGroups.length > 0 && audienceGroups.every((group) => audience.includes(group.key))
 
   const canSubmit = (body.trim().length > 0 || slides.length > 0 || link.trim().length > 0) && body.length <= MAX_POST_CHARS
 
@@ -556,6 +570,9 @@ export function Compose() {
       if (title.trim()) form.set('link_title', title.trim())
       slides.forEach((slide) => form.append('media[]', slide.file))
       form.set('cover_index', String(coverIndex))
+      if (canPickAudience && !audienceAll) {
+        audience.forEach((key) => form.append('audience[]', key))
+      }
       const created = await api<{ data: Post }>('/posts', { method: 'POST', body: form })
       void refresh()
       toast.show('پست شما منتشر شد', 'success')
@@ -586,7 +603,11 @@ export function Compose() {
         {user && (
           <div className="compose-author-bar">
             <Person user={user} />
-            <span className="chip chip-teal">انتشار عمومی</span>
+            <span className="chip chip-teal">
+              {canPickAudience && !audienceAll
+                ? `نمایش برای ${audience.length} گروه`
+                : 'انتشار عمومی'}
+            </span>
           </div>
         )}
         <QuotaHint quotaKey="posts" />
@@ -606,6 +627,12 @@ export function Compose() {
         </div>
 
         <ComposeMediaPicker slides={slides} coverIndex={coverIndex} onSlides={setSlides} onCover={setCoverIndex} />
+
+        {canPickAudience && (
+          <div className="compose-card">
+            <AudiencePicker groups={audienceGroups} value={audience} onChange={setAudience} />
+          </div>
+        )}
 
         <div className="compose-card">
           <button
@@ -800,6 +827,10 @@ export function CommunityPage() {
             </Button>
           </div>
         )}
+        <div className="two">
+          {(user?.permissions?.ask ?? true) && <Link className="btn btn-ghost" to={`/ask?community=${slug}`}><Icon name="chat" /> پرسیدن سؤال</Link>}
+          {user?.permissions?.discussion && <Link className="btn btn-ghost" to={`/discussion?community=${slug}`}><Icon name="users" /> بحث تخصصی</Link>}
+        </div>
         {(user?.can_create_case || user?.can_create_poll) && (
           <div className="two">
             {user?.can_create_case && <Link className="btn btn-ghost" to={`/case?community=${slug}`}><Icon name="book" /> طرح کیس</Link>}
@@ -807,16 +838,17 @@ export function CommunityPage() {
           </div>
         )}
         {!loading && topics.length === 0 && (
-          <Empty icon="book" title="هنوز موضوعی نیست" text="اولین کیس یا نظرسنجی تخصصی این انجمن را ثبت کنید." />
+          <Empty icon="book" title="هنوز موضوعی نیست" text="اولین سؤال یا بحث این انجمن را شروع کنید." />
         )}
         {topics.map((topic) => (
           <Link key={topic.id} to={`/topics/${topic.id}`} className="card stack">
             <div className="row between">
               <div className="row">
-                <span className={topic.kind === 'case' ? 'chip chip-coral' : topic.kind === 'poll' ? 'chip chip-violet' : 'chip chip-blue'}>
-                  {topic.kind === 'case' ? 'کیس بالینی' : topic.kind === 'poll' ? 'نظرسنجی' : 'بحث'}
+                <span className={topic.kind === 'case' ? 'chip chip-coral' : topic.kind === 'poll' ? 'chip chip-violet' : topic.kind === 'question' ? 'chip chip-teal' : 'chip chip-blue'}>
+                  {topic.kind === 'case' ? 'کیس بالینی' : topic.kind === 'poll' ? 'نظرسنجی' : topic.kind === 'question' ? 'پرسش' : 'بحث'}
                 </span>
                 {topic.is_demo && <span className="chip">نمونه ساختگی</span>}
+                <AudienceBadge labels={topic.audience_labels} />
               </div>
               <span className="faint">{topic.reply_count ?? 0} پاسخ</span>
             </div>
@@ -875,6 +907,7 @@ export function TopicPage() {
               <Person user={topic.author} />
               <Badges user={topic.author} />
             </div>
+            <AudienceBadge labels={topic.audience_labels} />
             <h2 style={{ fontSize: 17.5 }}>{topic.title}</h2>
             {topic.body && <p style={{ lineHeight: 1.85, fontSize: 14.2 }}>{topic.body}</p>}
             {topic.poll && (
@@ -992,23 +1025,72 @@ export function PollPage() {
   return <TopicForm kind="poll" title="نظرسنجی تخصصی" />
 }
 
-function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
+export function AskPage() {
+  return <TopicForm kind="question" title="پرسش در انجمن" />
+}
+
+export function DiscussionPage() {
+  return <TopicForm kind="discussion" title="بحث تخصصی" />
+}
+
+type TopicKind = 'case' | 'poll' | 'question' | 'discussion'
+
+const topicKindMeta: Record<TopicKind, { submit: string; titlePlaceholder: string; bodyLabel: string; bodyPlaceholder: string; success: string }> = {
+  case: {
+    submit: 'انتشار کیس',
+    titlePlaceholder: 'مثلاً بیمار ۵۴ ساله با درد قفسه سینه',
+    bodyLabel: 'شرح بالینی بدون شناسه',
+    bodyPlaceholder: 'یافته‌ها، علائم و سؤال بالینی بدون هیچ اطلاعات هویتی...',
+    success: 'کیس بالینی منتشر شد',
+  },
+  poll: {
+    submit: 'انتشار نظرسنجی',
+    titlePlaceholder: 'پرسش نظرسنجی تخصصی',
+    bodyLabel: 'توضیح تکمیلی',
+    bodyPlaceholder: 'زمینه و جزئیات نظرسنجی...',
+    success: 'نظرسنجی منتشر شد',
+  },
+  question: {
+    submit: 'انتشار سؤال',
+    titlePlaceholder: 'سؤال خود را کوتاه بنویسید',
+    bodyLabel: 'توضیح سؤال',
+    bodyPlaceholder: 'جزئیات سؤال خود را بنویسید...',
+    success: 'سؤال شما در انجمن منتشر شد',
+  },
+  discussion: {
+    submit: 'انتشار بحث',
+    titlePlaceholder: 'عنوان بحث تخصصی',
+    bodyLabel: 'متن بحث',
+    bodyPlaceholder: 'نکته یا موضوع علمی برای گفت‌وگو با همکاران...',
+    success: 'بحث شما در انجمن منتشر شد',
+  },
+}
+
+function TopicForm({ kind, title }: { kind: TopicKind; title: string }) {
   const navigate = useNavigate()
-  const { refresh } = useAuth()
+  const { user, refresh } = useAuth()
   const toast = useToast()
   const params = new URLSearchParams(window.location.search)
-  const [slug, setSlug] = useState(params.get('community') || 'cardiology')
+  const [slug, setSlug] = useState(params.get('community') || '')
   const [communities, setCommunities] = useState<CommunityCard[]>([])
   const [options, setOptions] = useState(['', ''])
   const [topicTitle, setTopicTitle] = useState('')
   const [topicBody, setTopicBody] = useState('')
   const [anonymous, setAnonymous] = useState(true)
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false)
+  const [audience, setAudience] = useState<string[]>(() => (user?.audience_groups ?? []).map((group) => group.key))
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const meta = topicKindMeta[kind]
+  const canPickAudience = user?.permissions?.audience && (user?.audience_groups?.length ?? 0) > 0
+  const audienceGroups = user?.audience_groups ?? []
+  const audienceAll = audienceGroups.length > 0 && audienceGroups.every((group) => audience.includes(group.key))
 
   useEffect(() => {
-    api<{ data: CommunityCard[] }>('/communities').then((payload) => setCommunities(payload.data)).catch(() => undefined)
+    api<{ data: CommunityCard[] }>('/communities').then((payload) => {
+      setCommunities(payload.data)
+      setSlug((current) => current || payload.data[0]?.slug || '')
+    }).catch(() => undefined)
   }, [])
 
   const submit = (event: React.FormEvent) => {
@@ -1017,6 +1099,10 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
     const cleanOptions = options.map((o) => o.trim()).filter(Boolean)
     if (kind === 'poll' && cleanOptions.length < 2) {
       setError('حداقل دو گزینه برای نظرسنجی وارد کنید.')
+      return
+    }
+    if (!slug) {
+      setError('انجمن را انتخاب کنید.')
       return
     }
     setBusy(true)
@@ -1028,11 +1114,12 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
       anonymous: kind === 'case' ? anonymous : false,
       disclaimer_accepted: disclaimerAccepted,
       options: kind === 'poll' ? cleanOptions : undefined,
+      audience: canPickAudience && !audienceAll ? audience : undefined,
     }
     void api<{ data: Topic }>(`/communities/${slug}/topics`, { method: 'POST', body: JSON.stringify(payload) })
       .then((created) => {
         void refresh()
-        toast.show(kind === 'case' ? 'کیس بالینی منتشر شد' : 'نظرسنجی منتشر شد', 'success')
+        toast.show(meta.success, 'success')
         navigate(`/topics/${created.data.id}`)
       })
       .catch((reason) => setError(errText(reason)))
@@ -1042,7 +1129,7 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
   return (
     <>
       <Top title={title} back />
-      <form id="topic-form" className="screen-body pad stack" style={{ paddingBottom: 100 }} onSubmit={submit}>
+      <form id="topic-form" className="screen-body pad stack" onSubmit={submit}>
         <div className="banner banner-warn">
           <Icon name="shield" />
           <span>اطلاعات هویتی بیمار، چهره، کد ملی و شماره تماس را ننویسید. این فضا جایگزین ویزیت نیست.</span>
@@ -1062,22 +1149,28 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
               className="input"
               value={topicTitle}
               onChange={(e) => setTopicTitle(e.target.value)}
-              placeholder={kind === 'case' ? 'مثلاً بیمار ۵۴ ساله با درد قفسه سینه' : 'پرسش نظرسنجی تخصصی'}
+              placeholder={meta.titlePlaceholder}
               required
             />
           </Field>
 
-          <Field label={kind === 'case' ? 'شرح بالینی بدون شناسه' : 'توضیح تکمیلی'} htmlFor="topic-body">
+          <Field label={meta.bodyLabel} htmlFor="topic-body">
             <textarea
               id="topic-body"
               className="textarea"
               value={topicBody}
               onChange={(e) => setTopicBody(e.target.value)}
-              placeholder={kind === 'case' ? 'یافته‌ها، علائم و سؤال بالینی بدون هیچ اطلاعات هویتی...' : 'زمینه و جزئیات نظرسنجی...'}
+              placeholder={meta.bodyPlaceholder}
               required
             />
           </Field>
         </div>
+
+        {canPickAudience && (
+          <div className="card">
+            <AudiencePicker groups={audienceGroups} value={audience} onChange={setAudience} />
+          </div>
+        )}
 
         {kind === 'poll' && (
           <div className="card stack">
@@ -1130,17 +1223,19 @@ function TopicForm({ kind, title }: { kind: 'case' | 'poll'; title: string }) {
               <span>انتشار بدون نام (نام شما نمایش داده نمی‌شود)</span>
             </label>
           )}
-          <label className="check">
-            <input type="checkbox" checked={disclaimerAccepted} onChange={(e) => setDisclaimerAccepted(e.target.checked)} required />
-            <span>می‌دانم این محتوا توصیه درمانی یا اجماع علمی نیست.</span>
-          </label>
+          {(kind === 'case' || kind === 'poll') && (
+            <label className="check">
+              <input type="checkbox" checked={disclaimerAccepted} onChange={(e) => setDisclaimerAccepted(e.target.checked)} required />
+              <span>می‌دانم این محتوا توصیه درمانی یا اجماع علمی نیست.</span>
+            </label>
+          )}
         </div>
 
         {error && <div className="error">{error}</div>}
       </form>
       <div className="sticky-submit-bar">
         <Button variant="primary" block loading={busy} type="submit" form="topic-form">
-          <Icon name="send" /> انتشار {kind === 'case' ? 'کیس' : 'نظرسنجی'}
+          <Icon name="send" /> {meta.submit}
         </Button>
       </div>
     </>

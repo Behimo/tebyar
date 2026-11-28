@@ -32,7 +32,7 @@ class CommunityController extends Controller
     public function show(Request $request, string $slug): JsonResponse
     {
         $community = Community::query()->where('slug', $slug)->withCount(['members', 'topics'])->firstOrFail();
-        $topics = $community->topics()->whereNull('hidden_at')->with(['author', 'community'])->latest()->paginate(20);
+        $topics = $community->topics()->whereNull('hidden_at')->visibleTo($request->user())->with(['author', 'community'])->latest()->paginate(20);
 
         return response()->json([
             'data' => $this->card($community, $request->user(), $request->user()->communities()->pluck('communities.id')->all()),
@@ -60,15 +60,30 @@ class CommunityController extends Controller
     {
         $community = Community::query()->where('slug', $slug)->firstOrFail();
         $user = $request->user();
+
+        if (! Membership::canUseCommunity($user)) {
+            abort(403);
+        }
+
         $data = $request->validate([
-            'kind' => ['required', Rule::in(['discussion', 'case', 'poll'])],
+            'kind' => ['required', Rule::in(['discussion', 'question', 'case', 'poll'])],
             'title' => ['required', 'string', 'max:180'],
             'body' => ['nullable', 'string', 'max:8000'],
             'anonymous' => ['sometimes', 'boolean'],
             'disclaimer_accepted' => ['sometimes', 'boolean'],
             'options' => ['nullable', 'array', 'min:2', 'max:6'],
             'options.*' => ['string', 'max:160'],
+            'audience' => ['nullable', 'array', 'min:1', 'max:7'],
+            'audience.*' => ['string', Rule::in(array_keys(Membership::AUDIENCE_GROUPS))],
         ]);
+
+        if (Membership::isRestricted($user) && $data['kind'] !== 'question') {
+            return response()->json(['message' => 'اعضای عمومی و دانشجویان فقط می‌توانند سؤال بپرسند.'], 403);
+        }
+
+        if (in_array($data['kind'], ['discussion', 'case', 'poll'], true) && ! Membership::canPostSocial($user)) {
+            return response()->json(['message' => 'این نوع موضوع فقط برای اعضای حرفه‌ای باز است.'], 403);
+        }
 
         if ($data['kind'] === 'case' && ! Membership::canCreateCase($user)) {
             return response()->json(['message' => 'طرح کیس فقط برای پزشکان دارای پروانه تأییدشده باز است.'], 403);
@@ -76,10 +91,6 @@ class CommunityController extends Controller
 
         if ($data['kind'] === 'poll' && ! Membership::canCreatePoll($user)) {
             return response()->json(['message' => 'نظرسنجی تخصصی فقط برای پزشکان دارای پروانه تأییدشده باز است.'], 403);
-        }
-
-        if (! Membership::canUseCommunity($user)) {
-            abort(403);
         }
 
         Membership::assertQuota($user, 'topics');
@@ -97,20 +108,17 @@ class CommunityController extends Controller
             ]);
         }
 
-        if (Membership::isLearner($user)) {
-            $count = Topic::query()->where('user_id', $user->id)->where('created_at', '>=', now()->startOfDay())->count();
-            if ($count >= (int) config('tebyar.student_daily_posts')) {
-                throw ValidationException::withMessages(['title' => 'سقف انتشار امروز برای حساب دانشجویی پر شده است.']);
-            }
-        }
+        $audience = Membership::normalizeAudience($user, $data['audience'] ?? null);
+        $anonymous = Membership::isRestricted($user) ? false : (bool) ($data['anonymous'] ?? false);
 
-        $topic = DB::transaction(function () use ($community, $user, $data) {
+        $topic = DB::transaction(function () use ($community, $user, $data, $audience, $anonymous) {
             $topic = $community->topics()->create([
                 'user_id' => $user->id,
                 'kind' => $data['kind'],
                 'title' => $data['title'],
                 'body' => $data['body'] ?? null,
-                'anonymous' => (bool) ($data['anonymous'] ?? false),
+                'audience' => $audience,
+                'anonymous' => $anonymous,
                 'disclaimer_accepted' => (bool) ($data['disclaimer_accepted'] ?? false),
             ]);
 
@@ -131,6 +139,7 @@ class CommunityController extends Controller
     public function showTopic(Request $request, Topic $topic): JsonResponse
     {
         abort_if($topic->hidden_at, 404);
+        abort_unless($topic->isVisibleTo($request->user()), 404);
         $topic->load(['author', 'community']);
         $replies = $topic->replies()
             ->whereNull('hidden_at')
@@ -148,6 +157,8 @@ class CommunityController extends Controller
     public function reply(Request $request, Topic $topic): JsonResponse
     {
         abort_if($topic->hidden_at, 404);
+        abort_unless($topic->isVisibleTo($request->user()), 404);
+        abort_unless(Membership::canUseCommunity($request->user()), 403);
         Membership::assertQuota($request->user(), 'comments');
         $data = $request->validate([
             'body' => ['required', 'string', 'max:4000'],
@@ -188,7 +199,7 @@ class CommunityController extends Controller
 
     public function vote(Request $request, Topic $topic): JsonResponse
     {
-        abort_unless($topic->kind === 'poll' && ! $topic->hidden_at, 404);
+        abort_unless($topic->kind === 'poll' && ! $topic->hidden_at && $topic->isVisibleTo($request->user()), 404);
         if (! Membership::canCreatePoll($request->user())) {
             return response()->json(['message' => 'رأی دادن در نظرسنجی تخصصی برای پروانه تأییدشده باز است.'], 403);
         }

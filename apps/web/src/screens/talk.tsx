@@ -696,8 +696,8 @@ export function Profile() {
           actions={(
             <>
               <Link className="btn btn-ghost" to="/profile/edit"><Icon name="edit" /> ویرایش</Link>
-              <Link className="btn btn-ghost" to="/insights"><Icon name="insights" /> آمار</Link>
-              <Link className="btn btn-primary" to="/messages"><Icon name="direct" /> پیام‌ها</Link>
+              {(user.permissions?.insights ?? true) && <Link className="btn btn-ghost" to="/insights"><Icon name="insights" /> آمار</Link>}
+              {(user.permissions?.message ?? true) && <Link className="btn btn-primary" to="/messages"><Icon name="direct" /> پیام‌ها</Link>}
             </>
           )}
         >
@@ -712,6 +712,7 @@ export function DoctorPage() {
   const { slug } = useParams()
   const navigate = useNavigate()
   const toast = useToast()
+  const { user: viewer } = useAuth()
   const [user, setUser] = useState<UserCard | null>(null)
   const [payload, setPayload] = useState<ProfilePayload>({ posts: [], reposts: [], topics: [], communities: [] })
   const [error, setError] = useState('')
@@ -763,7 +764,7 @@ export function DoctorPage() {
                 >
                   {user.is_following ? 'دنبال می‌کنید' : 'دنبال کردن'}
                 </Button>
-                {user.id && (
+                {user.id && (viewer?.permissions?.message ?? true) && (
                   <Button
                     variant="primary"
                     type="button"

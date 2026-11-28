@@ -84,6 +84,7 @@ class TopicResource extends Resource
                         'case' => 'کیس بالینی',
                         'poll' => 'نظرسنجی',
                         'discussion' => 'بحث تخصصی',
+                        'question' => 'پرسش',
                     ]),
             ])
             ->recordActions([

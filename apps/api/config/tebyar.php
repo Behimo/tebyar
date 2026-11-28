@@ -6,7 +6,7 @@ return [
     'sms' => env('SMS_DRIVER', 'log'),
     'kavenegar_key' => env('KAVENEGAR_API_KEY'),
     'kavenegar_sender' => env('KAVENEGAR_SENDER', '10004346'),
-    'student_daily_posts' => (int) env('STUDENT_DAILY_POSTS', 5),
+    'restricted_daily_quotas' => ['topics' => 3, 'comments' => 30],
     'story_hours' => 24,
     'fcm_server_key' => env('FCM_SERVER_KEY'),
     'limits_enabled' => (bool) env('TEBYAR_LIMITS_ENABLED', true),

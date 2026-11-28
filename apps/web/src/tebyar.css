@@ -337,7 +337,7 @@ html[data-theme="dark"] .toggle{background:#344056}
 .timeline-body span{font-size:12px;color:var(--text-muted)}
 
 /* 7. Creation Studio (Compose, Case, Poll) */
-.compose-studio{display:flex;flex-direction:column;gap:14px;padding:8px 16px 104px}
+.compose-studio{display:flex;flex-direction:column;gap:14px;padding:8px 16px 24px}
 .compose-author-bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border-radius:18px;background:var(--surface);border:1px solid var(--card-border);box-shadow:var(--shadow-1)}
 .compose-card{background:var(--surface);border:1px solid var(--card-border);border-radius:20px;padding:14px;box-shadow:var(--shadow-1);display:flex;flex-direction:column;gap:10px}
 .compose-textarea{width:100%;min-height:110px;border:0;background:transparent;resize:none;font-size:15.5px;line-height:1.75;color:var(--text);padding:0}
@@ -368,7 +368,7 @@ html[data-theme="dark"] .toggle{background:#344056}
 .compose-link-toggle svg{width:18px;height:18px;color:var(--cobalt);transition:transform var(--dur-fast) ease}
 .compose-link-toggle.is-open svg.chev{transform:rotate(180deg)}
 
-.sticky-submit-bar{position:sticky;bottom:0;left:0;right:0;padding:12px 16px calc(14px + var(--safe-bottom));background:linear-gradient(transparent,var(--bg) 28%);z-index:20;margin-top:auto}
+.sticky-submit-bar{flex:0 0 auto;position:sticky;bottom:0;left:0;right:0;padding:12px 16px calc(14px + var(--safe-bottom));background:linear-gradient(transparent,var(--bg) 28%);z-index:20;margin-top:auto}
 
 .poll-option-row{display:flex;align-items:center;gap:8px}
 .poll-option-row .input{flex:1}
@@ -865,3 +865,9 @@ html[data-theme="dark"] .bubble .meta.sender{color:var(--chip-teal-fg)}
 
 @media(max-width:380px){.brand{font-size:19px}.story{flex-basis:66px;width:66px}.story-tile{width:66px;height:88px}.otp-box{width:44px;height:52px}}
 @media(prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;animation-iteration-count:1!important;transition-duration:.01ms!important;scroll-behavior:auto!important}}
+
+/* 20. Audience picker */
+.audience-picker{display:flex;flex-wrap:wrap;gap:8px}
+.audience-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--radius-pill);padding:7px 13px;font-size:12.5px;font-weight:600;background:var(--surface-2);color:var(--text-muted);border:1.5px solid var(--field-border);transition:all var(--dur-fast) ease}
+.audience-chip svg{width:14px;height:14px}
+.audience-chip.is-on{background:var(--chip-blue-bg);color:var(--chip-blue-fg);border-color:var(--cobalt)}

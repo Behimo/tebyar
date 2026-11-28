@@ -78,6 +78,21 @@ class Present
         $card['bio'] = $user->bio;
         $card['can_create_case'] = Membership::canCreateCase($user);
         $card['can_create_poll'] = Membership::canCreatePoll($user);
+        $card['tier'] = Membership::isProfessional($user) ? 'professional' : (Membership::isRestricted($user) ? 'restricted' : null);
+        $card['permissions'] = [
+            'post' => Membership::canPostSocial($user),
+            'story' => Membership::canPostSocial($user),
+            'ask' => Membership::canAskQuestion($user),
+            'discussion' => Membership::canPostSocial($user),
+            'case' => Membership::canCreateCase($user),
+            'poll' => Membership::canCreatePoll($user),
+            'message' => Membership::canMessage($user),
+            'jobs' => Membership::canUseJobs($user),
+            'subscribe' => Membership::canSubscribe($user),
+            'insights' => Membership::isProfessional($user),
+            'audience' => Membership::canChooseAudience($user),
+        ];
+        $card['audience_groups'] = Membership::audienceGroupOptions();
         $card['is_pro'] = Membership::isPro($user);
         $card['pro_until'] = $user->pro_until?->toIso8601String();
         $card['quotas'] = Membership::quotas($user);
@@ -152,6 +167,8 @@ class Present
                 ? (bool) $post->getAttribute('bookmarked')
                 : $post->bookmarks()->where('user_id', $viewer->id)->exists(),
             'is_demo' => (bool) $post->is_demo,
+            'audience' => $post->audience,
+            'audience_labels' => self::audienceLabels($post->audience),
             'created_at' => $post->created_at?->toIso8601String(),
             'author' => self::user($post->author, $viewer),
             'repost_of' => $original,
@@ -216,6 +233,8 @@ class Present
             'title' => $topic->title,
             'body' => $topic->body,
             'anonymous' => $topic->anonymous,
+            'audience' => $topic->audience,
+            'audience_labels' => self::audienceLabels($topic->audience),
             'is_demo' => (bool) $topic->is_demo,
             'created_at' => $topic->created_at?->toIso8601String(),
             'author' => $mask ? self::anonymousAuthor() : self::user($topic->author, $viewer),
@@ -403,6 +422,23 @@ class Present
             ->flatMap(fn (Block $block) => [$block->blocker_id, $block->blocked_id])
             ->reject(fn ($id) => (int) $id === $viewer->id)
             ->unique()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>|null  $audience
+     * @return array<int, string>
+     */
+    public static function audienceLabels(?array $audience): array
+    {
+        if (! $audience) {
+            return [];
+        }
+
+        return collect($audience)
+            ->map(fn (string $key) => Membership::AUDIENCE_GROUPS[$key]['label'] ?? null)
+            ->filter()
             ->values()
             ->all();
     }

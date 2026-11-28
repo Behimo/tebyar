@@ -65,14 +65,18 @@ class ProfileController extends Controller
     {
         $user = $request->user();
 
-        if ($user->account_status === 'verified' && $request->input('role') !== 'specialty') {
+        $upgradeToProfessional = $user->account_status === 'verified'
+            && Membership::isRestricted($user)
+            && in_array($request->input('role'), Membership::PROFESSIONALS, true);
+
+        if ($user->account_status === 'verified' && ! $upgradeToProfessional) {
             throw ValidationException::withMessages([
                 'role' => 'حساب شما قبلاً تأیید شده است.',
             ]);
         }
 
         $data = $request->validate([
-            'role' => ['required', Rule::in(['student', 'intern', 'resident', 'general', 'specialist', 'employer'])],
+            'role' => ['required', Rule::in(array_merge(Membership::PROFESSIONALS, ['student', 'public', 'employer']))],
             'name' => ['required', 'string', 'max:80'],
             'city' => ['nullable', 'string', 'max:80'],
             'specialty_title' => ['nullable', 'string', 'max:120'],
@@ -102,12 +106,8 @@ class ProfileController extends Controller
             $data['national_id'] = $nationalId;
         }
 
-        if (in_array($data['role'], Membership::LEARNERS, true) && empty($data['student_number'])) {
-            throw ValidationException::withMessages(['student_number' => 'شماره دانشجویی الزامی است.']);
-        }
-
-        if (in_array($data['role'], Membership::LICENSED, true) && empty($data['medical_council_number'])) {
-            throw ValidationException::withMessages(['medical_council_number' => 'شماره نظام پزشکی الزامی است.']);
+        if (in_array($data['role'], Membership::PROFESSIONALS, true) && empty($data['medical_council_number'])) {
+            throw ValidationException::withMessages(['medical_council_number' => 'شماره نظام (کد نظام حرفه‌ای) الزامی است.']);
         }
 
         if ($data['role'] === 'employer' && (empty($data['organization_name']) || empty($data['organization_type']) || empty($data['city']))) {
@@ -146,7 +146,7 @@ class ProfileController extends Controller
         $user = User::query()
             ->where('slug', $slug)
             ->where('account_status', 'verified')
-            ->whereIn('role', Membership::MEDICAL)
+            ->whereIn('role', Membership::MEMBERS)
             ->withCount(['followers', 'following', 'posts'])
             ->firstOrFail();
 
@@ -171,7 +171,7 @@ class ProfileController extends Controller
             }
         }
 
-        $postQuery = fn () => $user->posts()->visible()
+        $postQuery = fn () => $user->posts()->visible()->visibleTo($viewer)
             ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
             ->withCount(['reactions', 'comments', 'reposts'])
             ->withViewerState($viewer)
@@ -185,7 +185,7 @@ class ProfileController extends Controller
             'reposts' => $postQuery()->where('type', 'repost')->limit(24)->get()
                 ->map(fn ($post) => Present::post($post, $viewer))
                 ->values(),
-            'topics' => $user->topics()->whereNull('topics.hidden_at')->with(['author', 'community'])->withCount('replies')->latest()->limit(12)->get()
+            'topics' => $user->topics()->whereNull('topics.hidden_at')->visibleTo($viewer)->with(['author', 'community'])->withCount('replies')->latest()->limit(12)->get()
                 ->map(fn ($topic) => Present::topic($topic, $viewer))
                 ->values(),
             'communities' => $user->communities()->withCount(['members', 'topics'])->get()->map(fn ($community) => [
@@ -255,7 +255,9 @@ class ProfileController extends Controller
 
     public function storeEntry(Request $request): JsonResponse
     {
-        $this->ensureMedical($request->user());
+        if (! Membership::isProfessional($request->user())) {
+            abort(403, 'این بخش مخصوص اعضای حرفه‌ای است.');
+        }
         $data = $request->validate([
             'kind' => ['required', Rule::in(['education', 'experience', 'publication', 'certificate', 'talk', 'skill'])],
             'title' => ['required', 'string', 'max:160'],
@@ -279,7 +281,7 @@ class ProfileController extends Controller
 
     private function ensureMedical(User $user): void
     {
-        if ($user->account_status !== 'verified' || ! in_array($user->role, Membership::MEDICAL, true)) {
+        if (! Membership::isActiveMember($user)) {
             abort(403, 'پروفایل عمومی پس از تأیید عضویت فعال می‌شود.');
         }
     }

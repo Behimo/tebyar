@@ -22,6 +22,7 @@ export function QuotaHint({ quotaKey }: { quotaKey: QuotaKey }) {
   const item = user.quotas.items[quotaKey]
   if (!item || item.limit == null) return null
   const remaining = Math.max(0, item.limit - item.used)
+  const daily = user.quotas.period === 'daily'
 
   return (
     <div className={item.exceeded ? 'quota-hint is-full' : 'quota-hint'}>
@@ -29,18 +30,24 @@ export function QuotaHint({ quotaKey }: { quotaKey: QuotaKey }) {
         <Icon name={item.exceeded ? 'lock' : 'crown'} filled={!item.exceeded} />
         <span>
           {item.exceeded
-            ? `سقف رایگان ${item.label} (${fa.format(item.limit)}) پر شده است.`
-            : `${fa.format(remaining)} از ${fa.format(item.limit)} سهمیه رایگان ${item.label} باقی مانده`}
+            ? daily
+              ? `سقف روزانه ${item.label} پر شده است. فردا دوباره تلاش کنید.`
+              : `سقف رایگان ${item.label} (${fa.format(item.limit)}) پر شده است.`
+            : daily
+              ? `${fa.format(remaining)} از ${fa.format(item.limit)} ${item.label} امروز باقی مانده`
+              : `${fa.format(remaining)} از ${fa.format(item.limit)} سهمیه رایگان ${item.label} باقی مانده`}
         </span>
       </div>
-      <button
-        type="button"
-        className="text-btn"
-        style={{ fontSize: 12, padding: '2px 6px', flexShrink: 0 }}
-        onClick={() => openUpgradeSheet({ quota: item })}
-      >
-        ارتقا به پرو
-      </button>
+      {!daily && (
+        <button
+          type="button"
+          className="text-btn"
+          style={{ fontSize: 12, padding: '2px 6px', flexShrink: 0 }}
+          onClick={() => openUpgradeSheet({ quota: item })}
+        >
+          ارتقا به پرو
+        </button>
+      )}
     </div>
   )
 }
@@ -70,6 +77,7 @@ export function UpgradeSheet() {
 
   useEffect(() => {
     if (!open || !user || user.account_status !== 'verified' || user.role === 'employer') return
+    if (user.permissions && !user.permissions.subscribe) return
     setLoading(true)
     void api<{ data: SubscriptionOverview }>('/subscription')
       .then((payload) => {

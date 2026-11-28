@@ -28,7 +28,27 @@ export type QuotaItem = {
 export type QuotaState = {
   limits_enabled: boolean
   is_exempt: boolean
-  items: Record<QuotaKey, QuotaItem>
+  period?: 'daily' | 'lifetime'
+  items: Partial<Record<QuotaKey, QuotaItem>>
+}
+
+export type Permissions = {
+  post: boolean
+  story: boolean
+  ask: boolean
+  discussion: boolean
+  case: boolean
+  poll: boolean
+  message: boolean
+  jobs: boolean
+  subscribe: boolean
+  insights: boolean
+  audience: boolean
+}
+
+export type AudienceGroup = {
+  key: string
+  label: string
 }
 
 export type UserCard = {
@@ -68,6 +88,9 @@ export type Me = UserCard & {
   notify_messages: boolean
   can_create_case: boolean
   can_create_poll: boolean
+  tier?: 'professional' | 'restricted' | null
+  permissions?: Permissions
+  audience_groups?: AudienceGroup[]
   is_pro: boolean
   pro_until: string | null
   quotas?: QuotaState
@@ -97,6 +120,8 @@ export type Post = {
   reacted: boolean
   bookmarked: boolean
   is_demo: boolean
+  audience?: string[] | null
+  audience_labels?: string[]
   created_at: string | null
   author: UserCard
   repost_of: Post | null
@@ -126,6 +151,8 @@ export type Topic = {
   title: string
   body: string | null
   anonymous: boolean
+  audience?: string[] | null
+  audience_labels?: string[]
   is_demo: boolean
   created_at: string | null
   author: UserCard

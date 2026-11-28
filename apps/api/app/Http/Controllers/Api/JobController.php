@@ -70,7 +70,7 @@ class JobController extends Controller
     {
         $user = $request->user();
         abort_if($vacancy->hidden_at || $vacancy->status !== 'published', 404);
-        if (! in_array($user->role, Membership::MEDICAL, true)) {
+        if (! Membership::canUseJobs($user)) {
             abort(403);
         }
 

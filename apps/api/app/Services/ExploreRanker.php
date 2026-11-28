@@ -53,6 +53,7 @@ class ExploreRanker
             $position = array_flip($pageIds);
             $posts = Post::query()
                 ->whereIn('id', $pageIds)
+                ->visibleTo($viewer)
                 ->with(['author', 'media', 'hashtags', 'original.author', 'original.media', 'original.hashtags'])
                 ->withCount(['reactions', 'comments', 'reposts'])
                 ->withViewerState($viewer)
@@ -87,6 +88,7 @@ class ExploreRanker
 
         $baseQuery = fn () => Post::query()
             ->visible()
+            ->visibleTo($viewer)
             ->where('type', '!=', 'repost')
             ->where('user_id', '!=', $viewer->id)
             ->when($hidden !== [], fn ($q) => $q->whereNotIn('user_id', $hidden))
@@ -353,7 +355,7 @@ class ExploreRanker
 
         $candidates = User::query()
             ->where('account_status', 'verified')
-            ->whereIn('role', Membership::MEDICAL)
+            ->whereIn('role', Membership::MEMBERS)
             ->whereNotIn('id', $exclude)
             ->withCount(['followers', 'following', 'posts'])
             ->limit(60)

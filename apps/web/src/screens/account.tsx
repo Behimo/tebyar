@@ -8,14 +8,23 @@ import { Avatar, Button, ConfirmSheet, Empty, Field, OtpInput, Person, Toggle, T
 import { PostGrid } from '../post-ui'
 import { Brand, Icon } from '../icons'
 
-const roleMeta = [
-  { value: 'student', label: 'دانشجو', desc: 'دانشجوی پزشکی عمومی', icon: 'graduation' },
-  { value: 'intern', label: 'اینترن', desc: 'کارورز دوره بالینی', icon: 'book' },
-  { value: 'resident', label: 'رزیدنت', desc: 'دستیار تخصصی', icon: 'stethoscope' },
-  { value: 'general', label: 'پزشک عمومی', desc: 'دارای شماره نظام پزشکی', icon: 'shield' },
-  { value: 'specialist', label: 'متخصص', desc: 'پزشک متخصص یا فوق‌تخصص', icon: 'award' },
-  { value: 'employer', label: 'مرکز درمانی', desc: 'بیمارستان، کلینیک یا مرکز آموزشی', icon: 'building' },
+const proRoleMeta = [
+  { value: 'general', label: 'پزشک عمومی', desc: 'دارای شماره نظام پزشکی', icon: 'shield', codeLabel: 'شماره نظام پزشکی' },
+  { value: 'specialist', label: 'پزشک متخصص', desc: 'پزشک متخصص یا فوق‌تخصص', icon: 'award', codeLabel: 'شماره نظام پزشکی' },
+  { value: 'resident', label: 'دستیار تخصصی', desc: 'رزیدنت دوره تخصصی', icon: 'stethoscope', codeLabel: 'شماره نظام پزشکی' },
+  { value: 'pharmacist', label: 'داروساز', desc: 'دارای شماره نظام پزشکی', icon: 'book', codeLabel: 'شماره نظام پزشکی (داروساز)' },
+  { value: 'nurse', label: 'پرستار', desc: 'دارای شماره نظام پرستاری', icon: 'users', codeLabel: 'شماره نظام پرستاری' },
+  { value: 'veterinarian', label: 'دامپزشک', desc: 'دارای شماره نظام دامپزشکی', icon: 'stethoscope', codeLabel: 'شماره نظام دامپزشکی' },
 ] as const
+
+const openRoleMeta = [
+  { value: 'student', label: 'دانشجو', desc: 'دانشجوی پزشکی یا علوم سلامت', icon: 'graduation' },
+  { value: 'public', label: 'عموم مردم', desc: 'کاربر عمومی علاقه‌مند به سلامت', icon: 'user' },
+] as const
+
+const employerRoleMeta = { value: 'employer', label: 'مرکز درمانی', desc: 'بیمارستان، کلینیک یا مرکز آموزشی', icon: 'building' } as const
+
+const roleMeta = [...proRoleMeta, ...openRoleMeta, employerRoleMeta] as const
 
 type RoleValue = (typeof roleMeta)[number]['value']
 
@@ -247,9 +256,11 @@ export function Join() {
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
 
-  const learner = role === 'student' || role === 'intern'
-  const licensed = role === 'resident' || role === 'general' || role === 'specialist'
+  const learner = role === 'student'
+  const licensed = (proRoleMeta as readonly { value: string }[]).some((r) => r.value === role)
+  const openRole = role === 'student' || role === 'public'
   const activeRoleMeta = roleMeta.find((r) => r.value === role)
+  const activeProMeta = proRoleMeta.find((r) => r.value === role)
 
   const submit = (event: React.FormEvent) => {
     event.preventDefault()
@@ -258,10 +269,10 @@ export function Join() {
     const body = new FormData()
     body.set('role', role)
     body.set('name', name.trim())
-    if (learner) body.set('student_number', latinDigits(studentNumber.trim()))
+    if (city.trim()) body.set('city', city.trim())
+    if (learner && studentNumber.trim()) body.set('student_number', latinDigits(studentNumber.trim()))
     if (licensed) body.set('medical_council_number', latinDigits(medicalCouncilNumber.trim()))
     if (role === 'employer') {
-      body.set('city', city.trim())
       body.set('organization_name', orgName.trim())
       body.set('organization_type', orgType)
       if (about.trim()) body.set('about', about.trim())
@@ -271,8 +282,13 @@ export function Join() {
     void api('/me/onboarding', { method: 'POST', body })
       .then(() => refresh())
       .then(() => {
-        toast.show('اطلاعات شما برای بررسی ثبت شد', 'success')
-        navigate('/pending')
+        if (openRole) {
+          toast.show('حساب شما فعال شد. خوش آمدید!', 'success')
+          navigate('/')
+        } else {
+          toast.show('اطلاعات شما برای بررسی ثبت شد', 'success')
+          navigate('/pending')
+        }
       })
       .catch((reason) => setError(errText(reason)))
       .finally(() => setBusy(false))
@@ -306,10 +322,11 @@ export function Join() {
               transition={{ duration: 0.2 }}
             >
               <p className="lead" style={{ marginTop: 0 }}>
-                جایگاه حرفه‌ای خود را انتخاب کنید تا نوع مدرک و دسترسی مناسب شما آماده شود.
+                جایگاه خود را انتخاب کنید تا نوع مدرک و دسترسی مناسب شما آماده شود.
               </p>
+              <b style={{ fontSize: 13 }}>کادر درمان — نیازمند کد نظام و تأیید ادمین</b>
               <div className="role-cards">
-                {roleMeta.map((item) => (
+                {proRoleMeta.map((item) => (
                   <button
                     key={item.value}
                     type="button"
@@ -321,6 +338,32 @@ export function Join() {
                     <span>{item.desc}</span>
                   </button>
                 ))}
+              </div>
+              <b style={{ fontSize: 13 }}>فعال‌سازی فوری — دسترسی محدود (مشاهده، لایک، نظر، بازنشر و پرسش در انجمن)</b>
+              <div className="role-cards">
+                {openRoleMeta.map((item) => (
+                  <button
+                    key={item.value}
+                    type="button"
+                    className={role === item.value ? 'role-card is-on' : 'role-card'}
+                    onClick={() => setRole(item.value)}
+                  >
+                    <span className="role-card-icon"><Icon name={item.icon} /></span>
+                    <b>{item.label}</b>
+                    <span>{item.desc}</span>
+                  </button>
+                ))}
+              </div>
+              <div className="role-cards">
+                <button
+                  type="button"
+                  className={role === 'employer' ? 'role-card is-on' : 'role-card'}
+                  onClick={() => setRole('employer')}
+                >
+                  <span className="role-card-icon"><Icon name={employerRoleMeta.icon} /></span>
+                  <b>{employerRoleMeta.label}</b>
+                  <span>{employerRoleMeta.desc}</span>
+                </button>
               </div>
               <Button variant="primary" block type="button" onClick={() => setStep(2)} style={{ marginTop: 8 }}>
                 ادامه با نقش «{activeRoleMeta?.label}»
@@ -338,8 +381,15 @@ export function Join() {
             >
               <div className="row between">
                 <span className="chip chip-blue"><Icon name={activeRoleMeta?.icon || 'user'} /> {activeRoleMeta?.label}</span>
-                <span className="faint">بررسی توسط تیم احراز طبیار</span>
+                <span className="faint">{openRole ? 'فعال‌سازی فوری' : 'بررسی توسط تیم احراز طبیار'}</span>
               </div>
+
+              {openRole && (
+                <div className="banner banner-info" style={{ margin: 0 }}>
+                  <Icon name="shield" />
+                  <span>با این نوع حساب می‌توانید محتوا را ببینید، لایک، نظر و بازنشر کنید و در انجمن سؤال بپرسید. انتشار پست و کیس مخصوص کادر درمان است.</span>
+                </div>
+              )}
 
               <Field label="نام و نام خانوادگی" htmlFor="join-name">
                 <input
@@ -354,9 +404,9 @@ export function Join() {
 
               {learner && (
                 <Field
-                  label="شماره دانشجویی"
+                  label="شماره دانشجویی (اختیاری)"
                   htmlFor="join-student"
-                  help="برای دانشجویان و اینترن‌ها فقط شماره دانشجویی کافی است."
+                  help="در صورت تمایل شماره دانشجویی خود را وارد کنید."
                 >
                   <input
                     id="join-student"
@@ -365,16 +415,15 @@ export function Join() {
                     value={studentNumber}
                     onChange={(e) => setStudentNumber(e.target.value)}
                     placeholder="401234567"
-                    required
                   />
                 </Field>
               )}
 
               {licensed && (
                 <Field
-                  label="شماره نظام پزشکی"
+                  label={activeProMeta?.codeLabel || 'شماره نظام پزشکی'}
                   htmlFor="join-license"
-                  help="شماره نظام پزشکی محرمانه می‌ماند و فقط برای احراز هویت استفاده می‌شود."
+                  help="این شماره محرمانه می‌ماند و فقط برای احراز هویت استفاده می‌شود."
                 >
                   <input
                     id="join-license"
@@ -731,84 +780,90 @@ export function Settings() {
           <span className="settings-row-chev"><Icon name="chevronLeft" /></span>
         </Link>
 
+        {(user.permissions?.subscribe ?? true) && (
         <section className="settings-pro-card">
-          <div className="settings-pro-head">
-            <div className="settings-pro-title">
-              <Icon name="crown" filled />
-              <span>{user.is_pro ? 'اشتراک طبیار پرو فعال است' : 'عضویت رایگان · طبیار پرو'}</span>
+            <div className="settings-pro-head">
+              <div className="settings-pro-title">
+                <Icon name="crown" filled />
+                <span>{user.is_pro ? 'اشتراک طبیار پرو فعال است' : 'عضویت رایگان · طبیار پرو'}</span>
+              </div>
+              <Button size="sm" variant={user.is_pro ? 'ghost' : 'primary'} type="button" onClick={openUpgrade}>
+                {user.is_pro ? 'جزئیات اشتراک' : 'ارتقا به پرو'}
+              </Button>
             </div>
-            <Button size="sm" variant={user.is_pro ? 'ghost' : 'primary'} type="button" onClick={openUpgrade}>
-              {user.is_pro ? 'جزئیات اشتراک' : 'ارتقا به پرو'}
-            </Button>
-          </div>
-          {user.is_pro ? (
-            <p className="muted" style={{ fontSize: 12.5 }}>
-              {user.pro_until
-                ? `انتشار نامحدود در فید و انجمن‌ها، ارسال پیام و آمار کامل تا ${when(user.pro_until)} فعال است.`
-                : 'انتشار نامحدود و آمار کامل برای حساب شما فعال است.'}
-            </p>
-          ) : (
-            <>
+            {user.is_pro ? (
               <p className="muted" style={{ fontSize: 12.5 }}>
-                {user.quotas?.is_exempt
-                  ? 'حساب شما از محدودیت انتشار معاف است.'
-                  : 'میزان مصرف از سهمیه پایه رایگان:'}
+                {user.pro_until
+                  ? `انتشار نامحدود در فید و انجمن‌ها، ارسال پیام و آمار کامل تا ${when(user.pro_until)} فعال است.`
+                  : 'انتشار نامحدود و آمار کامل برای حساب شما فعال است.'}
               </p>
-              {!user.quotas?.is_exempt && quotaItems.length > 0 && (
-                <div className="quota-list">
-                  {quotaItems.map((item) => {
-                    const limit = item.limit ?? 0
-                    const pct = limit > 0 ? Math.min(100, Math.round((item.used / limit) * 100)) : 0
-                    return (
-                      <div key={item.key} className="quota-row">
-                        <div className="quota-row-head">
-                          <span>{item.label}</span>
-                          <b className={item.exceeded ? 'is-full' : ''}>
-                            {limit > 0 ? `${faNum.format(item.used)} از ${faNum.format(limit)}` : faNum.format(item.used)}
-                          </b>
-                        </div>
-                        {limit > 0 && (
-                          <div className="quota-track">
-                            <div className={item.exceeded ? 'quota-fill is-full' : 'quota-fill'} style={{ width: `${pct}%` }} />
+            ) : (
+              <>
+                <p className="muted" style={{ fontSize: 12.5 }}>
+                  {user.quotas?.is_exempt
+                    ? 'حساب شما از محدودیت انتشار معاف است.'
+                    : 'میزان مصرف از سهمیه پایه رایگان:'}
+                </p>
+                {!user.quotas?.is_exempt && quotaItems.length > 0 && (
+                  <div className="quota-list">
+                    {quotaItems.map((item) => {
+                      const limit = item.limit ?? 0
+                      const pct = limit > 0 ? Math.min(100, Math.round((item.used / limit) * 100)) : 0
+                      return (
+                        <div key={item.key} className="quota-row">
+                          <div className="quota-row-head">
+                            <span>{item.label}</span>
+                            <b className={item.exceeded ? 'is-full' : ''}>
+                              {limit > 0 ? `${faNum.format(item.used)} از ${faNum.format(limit)}` : faNum.format(item.used)}
+                            </b>
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
-                </div>
-              )}
-            </>
-          )}
-        </section>
-
-        <h2 className="section-title section-title--tight">ابزارهای حرفه‌ای</h2>
-        <div className="card settings-card">
-          <SettingsRow
-            icon="insights"
-            tone="violet"
-            title="آمار و اینسایت"
-            sub={user.is_pro ? 'بازدیدها، تعامل‌ها و ترکیب مخاطبان' : 'خلاصه ۷ روزه · آمار کامل با پرو'}
-            to="/insights"
-          />
-          <SettingsRow
-            icon="briefcase"
-            tone="teal"
-            title="آماده همکاری (Open to Work)"
-            sub="نمایش نشان آماده همکاری در پروفایل شما"
-            trailing={(
-              <Toggle
-                label="آماده همکاری"
-                on={openToWork}
-                onChange={(next) => { setOpenToWork(next); savePrivacy({ open_to_work: next }) }}
-              />
+                          {limit > 0 && (
+                            <div className="quota-track">
+                              <div className={item.exceeded ? 'quota-fill is-full' : 'quota-fill'} style={{ width: `${pct}%` }} />
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </>
             )}
-          />
-        </div>
+          </section>
+        )}
+
+        {(user.permissions?.insights ?? true) && (
+          <>
+            <h2 className="section-title section-title--tight">ابزارهای حرفه‌ای</h2>
+            <div className="card settings-card">
+              <SettingsRow
+                icon="insights"
+                tone="violet"
+                title="آمار و اینسایت"
+                sub={user.is_pro ? 'بازدیدها، تعامل‌ها و ترکیب مخاطبان' : 'خلاصه ۷ روزه · آمار کامل با پرو'}
+                to="/insights"
+              />
+              <SettingsRow
+                icon="briefcase"
+                tone="teal"
+                title="آماده همکاری (Open to Work)"
+                sub="نمایش نشان آماده همکاری در پروفایل شما"
+                trailing={(
+                  <Toggle
+                    label="آماده همکاری"
+                    on={openToWork}
+                    onChange={(next) => { setOpenToWork(next); savePrivacy({ open_to_work: next }) }}
+                  />
+                )}
+              />
+            </div>
+          </>
+        )}
 
         <h2 className="section-title section-title--tight">فعالیت شما در طبیار</h2>
         <div className="card settings-card">
           <SettingsRow icon="bookmark" tone="cobalt" title="ذخیره‌شده‌ها" sub="پست‌های نشانه‌گذاری‌شده" to="/bookmarks" />
-          <SettingsRow icon="direct" tone="teal" title="پیام‌ها و دایرکت" sub="گفتگوهای خصوصی و گروهی" to="/messages" />
+          {(user.permissions?.message ?? true) && <SettingsRow icon="direct" tone="teal" title="پیام‌ها و دایرکت" sub="گفتگوهای خصوصی و گروهی" to="/messages" />}
           <SettingsRow icon="bell" tone="amber" title="اعلان‌ها" sub="لایک‌ها، نظرها و وضعیت احراز" to="/notifications" />
           <SettingsRow icon="explore" tone="violet" title="اکسپلور" sub="جست‌وجو و کشف پست‌های برگزیده" to="/explore" />
         </div>

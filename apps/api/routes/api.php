@@ -31,16 +31,10 @@ Route::prefix('v1')->group(function () {
         Route::middleware('member')->group(function () {
             Route::patch('me', [ProfileController::class, 'update']);
             Route::post('me/avatar', [ProfileController::class, 'avatar']);
-            Route::post('me/specialty', [ProfileController::class, 'specialty']);
-            Route::post('me/entries', [ProfileController::class, 'storeEntry']);
-            Route::delete('me/entries/{entry}', [ProfileController::class, 'destroyEntry']);
 
             Route::get('feed', [SocialController::class, 'feed']);
             Route::get('explore', [SocialController::class, 'explore']);
             Route::get('posts/{post}', [SocialController::class, 'show']);
-            Route::post('posts', [SocialController::class, 'store']);
-            Route::patch('posts/{post}', [SocialController::class, 'update']);
-            Route::delete('posts/{post}', [SocialController::class, 'destroy']);
             Route::post('posts/{post}/reactions', [SocialController::class, 'react']);
             Route::delete('posts/{post}/reactions', [SocialController::class, 'unreact']);
             Route::post('posts/{post}/comments', [SocialController::class, 'comment']);
@@ -49,8 +43,6 @@ Route::prefix('v1')->group(function () {
             Route::delete('posts/{post}/bookmark', [SocialController::class, 'unbookmark']);
             Route::get('bookmarks', [SocialController::class, 'bookmarks']);
             Route::get('stories', [SocialController::class, 'stories']);
-            Route::post('stories', [SocialController::class, 'storeStory']);
-            Route::delete('stories/{story}', [SocialController::class, 'destroyStory']);
             Route::post('stories/{story}/view', [SocialController::class, 'viewStory']);
 
             Route::get('communities', [CommunityController::class, 'index']);
@@ -69,16 +61,6 @@ Route::prefix('v1')->group(function () {
             Route::delete('doctors/{user}/follow', [ProfileController::class, 'unfollow']);
             Route::get('search', [InboxController::class, 'search']);
 
-            Route::get('connections', [MessageController::class, 'connections']);
-            Route::get('conversations', [MessageController::class, 'index']);
-            Route::post('conversations', [MessageController::class, 'open']);
-            Route::post('conversations/groups', [MessageController::class, 'storeGroup']);
-            Route::post('conversations/{conversation}/members', [MessageController::class, 'addMember']);
-            Route::delete('conversations/{conversation}/members/{user}', [MessageController::class, 'removeMember']);
-            Route::get('conversations/{conversation}/messages', [MessageController::class, 'messages']);
-            Route::post('conversations/{conversation}/messages', [MessageController::class, 'store']);
-            Route::get('messages/{message}/attachment', [MessageController::class, 'attachment']);
-
             Route::get('notifications', [InboxController::class, 'notifications']);
             Route::post('notifications/read', [InboxController::class, 'readNotifications']);
             Route::post('reports', [InboxController::class, 'report']);
@@ -86,18 +68,41 @@ Route::prefix('v1')->group(function () {
             Route::post('blocks', [InboxController::class, 'block']);
             Route::delete('blocks/{user}', [InboxController::class, 'unblock']);
 
-            Route::get('jobs', [JobController::class, 'index']);
-            Route::get('jobs/{vacancy}', [JobController::class, 'show']);
-            Route::post('jobs/{vacancy}/save', [JobController::class, 'save']);
-            Route::delete('jobs/{vacancy}/save', [JobController::class, 'unsave']);
-            Route::post('jobs/{vacancy}/apply', [JobController::class, 'apply']);
-
-            Route::get('subscription', [SubscriptionController::class, 'show']);
-            Route::post('subscription/requests', [SubscriptionController::class, 'store']);
-
             Route::post('impressions', [InsightsController::class, 'impressions'])->middleware('throttle:impressions');
-            Route::get('me/insights', [InsightsController::class, 'overview']);
-            Route::get('posts/{post}/insights', [InsightsController::class, 'post']);
+
+            Route::middleware('professional')->group(function () {
+                Route::post('me/specialty', [ProfileController::class, 'specialty']);
+                Route::post('me/entries', [ProfileController::class, 'storeEntry']);
+                Route::delete('me/entries/{entry}', [ProfileController::class, 'destroyEntry']);
+
+                Route::post('posts', [SocialController::class, 'store']);
+                Route::patch('posts/{post}', [SocialController::class, 'update']);
+                Route::delete('posts/{post}', [SocialController::class, 'destroy']);
+                Route::post('stories', [SocialController::class, 'storeStory']);
+                Route::delete('stories/{story}', [SocialController::class, 'destroyStory']);
+
+                Route::get('connections', [MessageController::class, 'connections']);
+                Route::get('conversations', [MessageController::class, 'index']);
+                Route::post('conversations', [MessageController::class, 'open']);
+                Route::post('conversations/groups', [MessageController::class, 'storeGroup']);
+                Route::post('conversations/{conversation}/members', [MessageController::class, 'addMember']);
+                Route::delete('conversations/{conversation}/members/{user}', [MessageController::class, 'removeMember']);
+                Route::get('conversations/{conversation}/messages', [MessageController::class, 'messages']);
+                Route::post('conversations/{conversation}/messages', [MessageController::class, 'store']);
+                Route::get('messages/{message}/attachment', [MessageController::class, 'attachment']);
+
+                Route::get('jobs', [JobController::class, 'index']);
+                Route::get('jobs/{vacancy}', [JobController::class, 'show']);
+                Route::post('jobs/{vacancy}/save', [JobController::class, 'save']);
+                Route::delete('jobs/{vacancy}/save', [JobController::class, 'unsave']);
+                Route::post('jobs/{vacancy}/apply', [JobController::class, 'apply']);
+
+                Route::get('subscription', [SubscriptionController::class, 'show']);
+                Route::post('subscription/requests', [SubscriptionController::class, 'store']);
+
+                Route::get('me/insights', [InsightsController::class, 'overview']);
+                Route::get('posts/{post}/insights', [InsightsController::class, 'post']);
+            });
         });
 
         Route::middleware('employer')->group(function () {

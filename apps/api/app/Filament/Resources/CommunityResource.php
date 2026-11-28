@@ -6,7 +6,7 @@ use App\Filament\Access;
 use App\Filament\Resources\CommunityResource\Pages\ListCommunities;
 use App\Models\Community;
 use BackedEnum;
-use Filament\Actions\CreateAction;
+use Filament\Actions\DeleteAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\Textarea;
 use Filament\Forms\Components\TextInput;
@@ -41,10 +41,14 @@ class CommunityResource extends Resource
     public static function form(Schema $schema): Schema
     {
         return $schema->components([
-            TextInput::make('name')->label('نام')->required(),
-            TextInput::make('slug')->label('نامک')->required(),
-            TextInput::make('specialty')->label('تخصص')->required(),
-            Textarea::make('description')->label('توضیح')->required(),
+            TextInput::make('name')->label('نام')->required()->maxLength(120),
+            TextInput::make('slug')
+                ->label('نامک')
+                ->maxLength(120)
+                ->rules(['nullable', 'regex:/^[a-z0-9-]+$/'])
+                ->helperText('حروف انگلیسی کوچک و خط تیره؛ خالی بگذارید تا خودکار ساخته شود.'),
+            TextInput::make('specialty')->label('تخصص')->required()->maxLength(120),
+            Textarea::make('description')->label('توضیح')->required()->maxLength(1000),
         ]);
     }
 
@@ -59,11 +63,13 @@ class CommunityResource extends Resource
                 TextColumn::make('members_count')->label('اعضا')->counts('members')->badge()->color('gray'),
                 TextColumn::make('topics_count')->label('موضوع‌ها')->counts('topics')->badge()->color('primary'),
             ])
-            ->headerActions([
-                CreateAction::make()->label('انجمن جدید'),
-            ])
             ->recordActions([
                 EditAction::make()->label('ویرایش'),
+                DeleteAction::make()
+                    ->label('حذف')
+                    ->requiresConfirmation()
+                    ->modalDescription('انجمن فقط زمانی حذف می‌شود که هیچ موضوعی نداشته باشد.')
+                    ->visible(fn (Community $record): bool => $record->topics()->count() === 0),
             ]);
     }
 

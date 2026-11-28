@@ -110,11 +110,15 @@ class UserResource extends Resource
                     'revoked' => 'لغوشده',
                 ]),
                 SelectFilter::make('role')->label('نقش')->options([
+                    'general' => 'پزشک عمومی',
+                    'specialist' => 'پزشک متخصص',
+                    'resident' => 'دستیار تخصصی',
+                    'pharmacist' => 'داروساز',
+                    'nurse' => 'پرستار',
+                    'veterinarian' => 'دامپزشک',
                     'student' => 'دانشجو',
                     'intern' => 'اینترن',
-                    'resident' => 'رزیدنت',
-                    'general' => 'پزشک عمومی',
-                    'specialist' => 'متخصص',
+                    'public' => 'عموم مردم',
                     'employer' => 'کارفرما',
                 ]),
             ])

@@ -140,11 +140,15 @@ class User extends Authenticatable implements FilamentUser
     public function roleLabel(): string
     {
         return match ($this->role) {
-            'student' => 'دانشجوی پزشکی',
+            'student' => 'دانشجو',
             'intern' => 'اینترن',
-            'resident' => 'رزیدنت',
+            'resident' => 'دستیار تخصصی',
             'general' => 'پزشک عمومی',
-            'specialist' => 'متخصص',
+            'specialist' => 'پزشک متخصص',
+            'pharmacist' => 'داروساز',
+            'nurse' => 'پرستار',
+            'veterinarian' => 'دامپزشک',
+            'public' => 'عموم مردم',
             'employer' => 'کارفرما',
             default => 'عضو',
         };

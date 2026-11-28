@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Middleware\EnsureEmployer;
+use App\Http\Middleware\EnsureProfessional;
 use App\Http\Middleware\EnsureVerifiedMember;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
@@ -27,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'member' => EnsureVerifiedMember::class,
             'employer' => EnsureEmployer::class,
+            'professional' => EnsureProfessional::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions): void {

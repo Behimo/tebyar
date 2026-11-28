@@ -59,7 +59,7 @@ class InboxController extends Controller
         $tag = mb_strtolower(ltrim($term, '#'));
         $doctors = User::query()
             ->where('account_status', 'verified')
-            ->whereIn('role', Membership::MEDICAL)
+            ->whereIn('role', Membership::MEMBERS)
             ->when($hidden !== [], fn ($query) => $query->whereNotIn('id', $hidden))
             ->where(fn ($q) => $q
                 ->where('name', 'like', $like)
@@ -70,7 +70,7 @@ class InboxController extends Controller
             ->limit(20)
             ->get();
 
-        $posts = Post::query()->visible()
+        $posts = Post::query()->visible()->visibleTo($viewer)
             ->when($hidden !== [], fn ($query) => $query->whereNotIn('user_id', $hidden))
             ->where(function ($q) use ($like, $tag) {
                 $q->where('body', 'like', $like)
